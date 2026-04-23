@@ -137,6 +137,10 @@ body {
   opacity: 1;
 }
 
+.preview-media--mirrored {
+  transform: scaleX(-1);
+}
+
 .preview-frame {
   pointer-events: none;
   position: absolute;

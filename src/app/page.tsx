@@ -35,11 +35,12 @@ export default function Home() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [mode, setMode] = useState<CaptureMode>("idle");
-  const [cameraFacing, setCameraFacing] = useState<"environment" | "user">("environment");
+  const [cameraFacing, setCameraFacing] = useState<"environment" | "user">("user");
   const [cameraError, setCameraError] = useState<string>("");
   const [sourceImage, setSourceImage] = useState<string>("");
   const [framedImage, setFramedImage] = useState<string>("");
   const [framedBlob, setFramedBlob] = useState<Blob | null>(null);
+  const [shouldMirrorResult, setShouldMirrorResult] = useState(false);
   const [isCompositing, setIsCompositing] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
 
@@ -99,7 +100,7 @@ export default function Home() {
     setCameraFacing(nextFacing);
   }, [cameraFacing, mode, openCamera]);
 
-  const composeFramedPhoto = useCallback(async (photoUrl: string) => {
+  const composeFramedPhoto = useCallback(async (photoUrl: string, mirrorPhoto = false) => {
     setIsCompositing(true);
     try {
       const [photo, frame] = await Promise.all([
@@ -115,7 +116,15 @@ export default function Home() {
         throw new Error("Canvas not supported");
       }
 
-      drawCoverImage(context, photo, canvas.width, canvas.height);
+      if (mirrorPhoto) {
+        context.save();
+        context.translate(canvas.width, 0);
+        context.scale(-1, 1);
+        drawCoverImage(context, photo, canvas.width, canvas.height);
+        context.restore();
+      } else {
+        drawCoverImage(context, photo, canvas.width, canvas.height);
+      }
       context.drawImage(frame, 0, 0, canvas.width, canvas.height);
 
       const pngUrl = canvas.toDataURL("image/png");
@@ -151,12 +160,14 @@ export default function Home() {
 
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
     const image = canvas.toDataURL("image/jpeg", 0.95);
+    const mirrorCapture = cameraFacing === "user";
 
     stopCamera();
     setSourceImage(image);
+    setShouldMirrorResult(mirrorCapture);
     setMode("result");
-    await composeFramedPhoto(image);
-  }, [composeFramedPhoto, stopCamera]);
+    await composeFramedPhoto(image, mirrorCapture);
+  }, [cameraFacing, composeFramedPhoto, stopCamera]);
 
   const onUploadPhoto = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -168,6 +179,7 @@ export default function Home() {
       const fileUrl = URL.createObjectURL(file);
       stopCamera();
       setSourceImage(fileUrl);
+      setShouldMirrorResult(false);
       setMode("result");
       await composeFramedPhoto(fileUrl);
       event.target.value = "";
@@ -222,9 +234,10 @@ export default function Home() {
     setSourceImage("");
     setFramedImage("");
     setFramedBlob(null);
+    setShouldMirrorResult(false);
     setCameraError("");
     setMode("idle");
-    setCameraFacing("environment");
+    setCameraFacing("user");
   }, [stopCamera]);
 
   useEffect(() => {
@@ -257,7 +270,7 @@ export default function Home() {
               {(mode === "idle" || mode === "camera") && (
                 <video
                   ref={videoRef}
-                  className={`preview-media ${mode === "camera" ? "is-visible" : ""}`}
+                  className={`preview-media ${mode === "camera" ? "is-visible" : ""} ${cameraFacing === "user" ? "preview-media--mirrored" : ""}`}
                   playsInline
                   muted
                   autoPlay
@@ -276,7 +289,7 @@ export default function Home() {
                 <img
                   src={sourceImage}
                   alt="Framed capture preview"
-                  className="preview-media is-visible"
+                  className={`preview-media is-visible ${shouldMirrorResult ? "preview-media--mirrored" : ""}`}
                 />
               )}
 
