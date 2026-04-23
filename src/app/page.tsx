@@ -238,8 +238,7 @@ export default function Home() {
           <div className="capture-panel__head">
             <h2 id="capture-title">Capture or Upload</h2>
             <p>
-              Use your phone camera or upload an existing photo. Once captured, the preview
-              locks into the framed result and the actions switch to save, share, and retake.
+              Use your phone camera or upload an existing photo.
             </p>
           </div>
 
