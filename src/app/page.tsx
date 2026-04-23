@@ -13,6 +13,24 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
+function drawCoverImage(
+  context: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  targetWidth: number,
+  targetHeight: number,
+) {
+  const scale = Math.max(
+    targetWidth / image.naturalWidth,
+    targetHeight / image.naturalHeight,
+  );
+  const drawWidth = image.naturalWidth * scale;
+  const drawHeight = image.naturalHeight * scale;
+  const offsetX = (targetWidth - drawWidth) / 2;
+  const offsetY = (targetHeight - drawHeight) / 2;
+
+  context.drawImage(image, offsetX, offsetY, drawWidth, drawHeight);
+}
+
 export default function Home() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -77,15 +95,15 @@ export default function Home() {
         loadImage("/frame.png"),
       ]);
       const canvas = document.createElement("canvas");
-      canvas.width = photo.naturalWidth;
-      canvas.height = photo.naturalHeight;
+      canvas.width = frame.naturalWidth;
+      canvas.height = frame.naturalHeight;
       const context = canvas.getContext("2d");
 
       if (!context) {
         throw new Error("Canvas not supported");
       }
 
-      context.drawImage(photo, 0, 0, canvas.width, canvas.height);
+      drawCoverImage(context, photo, canvas.width, canvas.height);
       context.drawImage(frame, 0, 0, canvas.width, canvas.height);
 
       const pngUrl = canvas.toDataURL("image/png");
@@ -210,12 +228,8 @@ export default function Home() {
       <header className="hero">
         <div className="hero__grain" />
         <div className="hero__content">
-          <p className="hero__kicker">LinkUp Colombo Frame Experience</p>
-          <h1>LinkUp Colombo Frame Demo</h1>
-          <p className="hero__subtitle">
-            Capture the moment in our signature frame, save it instantly, and share it
-            directly to social media.
-          </p>
+          <p className="hero__kicker">LinkUp Colombo Frame Demo</p>
+          <h1>Frame your shot</h1>
         </div>
       </header>
 
@@ -241,7 +255,15 @@ export default function Home() {
                 />
               )}
 
-              {mode === "result" && sourceImage && (
+              {mode === "result" && framedImage && (
+                <img
+                  src={framedImage}
+                  alt="Final framed capture preview"
+                  className="preview-media is-visible"
+                />
+              )}
+
+              {mode === "result" && !framedImage && sourceImage && (
                 <img
                   src={sourceImage}
                   alt="Framed capture preview"
@@ -249,7 +271,9 @@ export default function Home() {
                 />
               )}
 
-              <img src="/frame.png" alt="LinkUp frame overlay" className="preview-frame" />
+              {mode !== "result" && (
+                <img src="/frame.png" alt="LinkUp frame overlay" className="preview-frame" />
+              )}
 
               {mode === "idle" && (
                 <div className="preview-empty">
