@@ -35,6 +35,7 @@ export default function Home() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [mode, setMode] = useState<CaptureMode>("idle");
+  const [cameraFacing, setCameraFacing] = useState<"environment" | "user">("environment");
   const [cameraError, setCameraError] = useState<string>("");
   const [sourceImage, setSourceImage] = useState<string>("");
   const [framedImage, setFramedImage] = useState<string>("");
@@ -60,13 +61,13 @@ export default function Home() {
     }
   }, []);
 
-  const openCamera = useCallback(async () => {
+  const openCamera = useCallback(async (facingMode: "environment" | "user") => {
     setCameraError("");
     try {
       stopCamera();
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          facingMode: "environment",
+          facingMode,
           width: { ideal: 1080 },
           height: { ideal: 1350 },
         },
@@ -78,6 +79,7 @@ export default function Home() {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
+      setCameraFacing(facingMode);
       setMode("camera");
     } catch {
       setMode("idle");
@@ -86,6 +88,16 @@ export default function Home() {
       );
     }
   }, [stopCamera]);
+
+  const switchCamera = useCallback(async () => {
+    const nextFacing = cameraFacing === "environment" ? "user" : "environment";
+    if (mode === "camera") {
+      await openCamera(nextFacing);
+      return;
+    }
+
+    setCameraFacing(nextFacing);
+  }, [cameraFacing, mode, openCamera]);
 
   const composeFramedPhoto = useCallback(async (photoUrl: string) => {
     setIsCompositing(true);
@@ -212,6 +224,7 @@ export default function Home() {
     setFramedBlob(null);
     setCameraError("");
     setMode("idle");
+    setCameraFacing("environment");
   }, [stopCamera]);
 
   useEffect(() => {
@@ -289,6 +302,8 @@ export default function Home() {
                     onClick={downloadFramedPhoto}
                     className="btn btn--primary"
                     disabled={!framedImage || isCompositing}
+                    aria-label="Save to device"
+                    title="Save to device"
                   >
                     Save to Device
                   </button>
@@ -298,17 +313,31 @@ export default function Home() {
                     onClick={shareFramedPhoto}
                     className="btn btn--accent"
                     disabled={!framedImage || isCompositing || !canShare || isSharing}
+                    aria-label="Share to social"
+                    title="Share to social"
                   >
-                    {isSharing ? "Opening Share..." : "Share to Social"}
+                    Share to Social
                   </button>
 
-                  <button type="button" onClick={resetFlow} className="btn btn--ghost">
+                  <button
+                    type="button"
+                    onClick={resetFlow}
+                    className="btn btn--ghost"
+                    aria-label="Retake photo"
+                    title="Retake photo"
+                  >
                     Retake Photo
                   </button>
                 </>
               ) : (
                 <>
-                  <button type="button" onClick={openCamera} className="btn btn--primary">
+                  <button
+                    type="button"
+                    onClick={() => openCamera(cameraFacing)}
+                    className="btn btn--primary"
+                    aria-label="Open camera"
+                    title="Open camera"
+                  >
                     Open Camera
                   </button>
 
@@ -317,11 +346,13 @@ export default function Home() {
                     onClick={capturePhoto}
                     className="btn btn--accent"
                     disabled={mode !== "camera"}
+                    aria-label="Take photo"
+                    title="Take photo"
                   >
                     Take Photo
                   </button>
 
-                  <label htmlFor="upload-photo" className="btn btn--ghost">
+                  <label htmlFor="upload-photo" className="btn btn--ghost" aria-label="Upload photo" title="Upload photo">
                     Upload Photo
                   </label>
                   <input
@@ -331,6 +362,16 @@ export default function Home() {
                     onChange={onUploadPhoto}
                     className="visually-hidden"
                   />
+
+                  <button
+                    type="button"
+                    onClick={switchCamera}
+                    className="btn btn--subtle"
+                    aria-label={`Switch camera to ${cameraFacing === "environment" ? "front" : "back"}`}
+                    title={`Switch camera to ${cameraFacing === "environment" ? "front" : "back"}`}
+                  >
+                    Switch Camera
+                  </button>
                 </>
               )}
             </div>

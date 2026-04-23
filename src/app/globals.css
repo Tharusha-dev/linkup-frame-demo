@@ -172,13 +172,17 @@ body {
 
 .capture-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
   gap: 0.7rem;
 }
 
 .btn {
   border: 2px solid #1f1a17;
-  padding: 0.68rem 0.8rem;
+  min-height: 4rem;
+  padding: 0.7rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-family: var(--font-display), sans-serif;
   font-size: 1.02rem;
   letter-spacing: 0.02em;
@@ -210,9 +214,6 @@ body {
 }
 
 .btn--ghost {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   background: #fdf8e5;
   color: #261700;
 }
@@ -220,6 +221,13 @@ body {
 .btn--subtle {
   background: #d2d9aa;
   color: #1d1a14;
+}
+
+.btn svg {
+  width: 1.55rem;
+  height: 1.55rem;
+  fill: currentColor;
+  flex: none;
 }
 
 .visually-hidden {
