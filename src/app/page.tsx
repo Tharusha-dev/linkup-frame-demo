@@ -224,8 +224,8 @@ export default function Home() {
           <div className="capture-panel__head">
             <h2 id="capture-title">Capture or Upload</h2>
             <p>
-              Use your phone camera or upload an existing photo. The frame preview is
-              always visible before and after capture.
+              Use your phone camera or upload an existing photo. Once captured, the preview
+              locks into the framed result and the actions switch to save, share, and retake.
             </p>
           </div>
 
@@ -244,7 +244,7 @@ export default function Home() {
               {mode === "result" && sourceImage && (
                 <img
                   src={sourceImage}
-                  alt="Selected capture"
+                  alt="Framed capture preview"
                   className="preview-media is-visible"
                 />
               )}
@@ -259,78 +259,61 @@ export default function Home() {
             </div>
 
             <div className="capture-actions">
-              <button type="button" onClick={openCamera} className="btn btn--primary">
-                Open Camera
-              </button>
+              {mode === "result" ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={downloadFramedPhoto}
+                    className="btn btn--primary"
+                    disabled={!framedImage || isCompositing}
+                  >
+                    Save to Device
+                  </button>
 
-              <button
-                type="button"
-                onClick={capturePhoto}
-                className="btn btn--accent"
-                disabled={mode !== "camera"}
-              >
-                Take Photo
-              </button>
+                  <button
+                    type="button"
+                    onClick={shareFramedPhoto}
+                    className="btn btn--accent"
+                    disabled={!framedImage || isCompositing || !canShare || isSharing}
+                  >
+                    {isSharing ? "Opening Share..." : "Share to Social"}
+                  </button>
 
-              <label htmlFor="upload-photo" className="btn btn--ghost">
-                Upload Photo
-              </label>
-              <input
-                id="upload-photo"
-                type="file"
-                accept="image/*"
-                onChange={onUploadPhoto}
-                className="visually-hidden"
-              />
+                  <button type="button" onClick={resetFlow} className="btn btn--ghost">
+                    Retake Photo
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button type="button" onClick={openCamera} className="btn btn--primary">
+                    Open Camera
+                  </button>
 
-              <button type="button" onClick={resetFlow} className="btn btn--subtle">
-                Reset
-              </button>
+                  <button
+                    type="button"
+                    onClick={capturePhoto}
+                    className="btn btn--accent"
+                    disabled={mode !== "camera"}
+                  >
+                    Take Photo
+                  </button>
+
+                  <label htmlFor="upload-photo" className="btn btn--ghost">
+                    Upload Photo
+                  </label>
+                  <input
+                    id="upload-photo"
+                    type="file"
+                    accept="image/*"
+                    onChange={onUploadPhoto}
+                    className="visually-hidden"
+                  />
+                </>
+              )}
             </div>
 
             {cameraError && <p className="status-message">{cameraError}</p>}
-          </div>
-        </section>
-
-        <section className="result-panel" aria-labelledby="result-title">
-          <div className="capture-panel__head">
-            <h2 id="result-title">Export and Share</h2>
-            <p>
-              Your final image is composited with the official LinkUp frame and ready to
-              post.
-            </p>
-          </div>
-
-          <div className="result-card">
-            {framedImage ? (
-              <img src={framedImage} alt="Final framed result" className="result-image" />
-            ) : (
-              <div className="result-placeholder">
-                <p>Your framed image will appear here after capture.</p>
-              </div>
-            )}
-
-            <div className="result-actions">
-              <button
-                type="button"
-                onClick={downloadFramedPhoto}
-                className="btn btn--primary"
-                disabled={!framedImage || isCompositing}
-              >
-                Save to Device
-              </button>
-
-              <button
-                type="button"
-                onClick={shareFramedPhoto}
-                className="btn btn--accent"
-                disabled={!framedImage || isCompositing || !canShare || isSharing}
-              >
-                {isSharing ? "Opening Share..." : "Share to Social"}
-              </button>
-            </div>
-
-            {!canShare && (
+            {mode === "result" && !canShare && (
               <p className="status-message">
                 Direct sharing is not available in this browser. You can still save and post
                 manually.
