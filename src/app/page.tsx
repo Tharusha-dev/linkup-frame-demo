@@ -1,64 +1,343 @@
-import Image from "next/image";
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+type CaptureMode = "idle" | "camera" | "result";
+
+function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error(`Could not load image: ${url}`));
+    image.src = url;
+  });
+}
 
 export default function Home() {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [mode, setMode] = useState<CaptureMode>("idle");
+  const [cameraError, setCameraError] = useState<string>("");
+  const [sourceImage, setSourceImage] = useState<string>("");
+  const [framedImage, setFramedImage] = useState<string>("");
+  const [framedBlob, setFramedBlob] = useState<Blob | null>(null);
+  const [isCompositing, setIsCompositing] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+
+  const canShare = useMemo(
+    () => typeof navigator !== "undefined" && typeof navigator.share === "function",
+    [],
+  );
+
+  const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      for (const track of streamRef.current.getTracks()) {
+        track.stop();
+      }
+      streamRef.current = null;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }, []);
+
+  const openCamera = useCallback(async () => {
+    setCameraError("");
+    try {
+      stopCamera();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: "environment",
+          width: { ideal: 1080 },
+          height: { ideal: 1350 },
+        },
+        audio: false,
+      });
+
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      setMode("camera");
+    } catch {
+      setMode("idle");
+      setCameraError(
+        "Camera access is blocked on this device. You can still upload a photo from your gallery.",
+      );
+    }
+  }, [stopCamera]);
+
+  const composeFramedPhoto = useCallback(async (photoUrl: string) => {
+    setIsCompositing(true);
+    try {
+      const [photo, frame] = await Promise.all([
+        loadImage(photoUrl),
+        loadImage("/frame.png"),
+      ]);
+      const canvas = document.createElement("canvas");
+      canvas.width = photo.naturalWidth;
+      canvas.height = photo.naturalHeight;
+      const context = canvas.getContext("2d");
+
+      if (!context) {
+        throw new Error("Canvas not supported");
+      }
+
+      context.drawImage(photo, 0, 0, canvas.width, canvas.height);
+      context.drawImage(frame, 0, 0, canvas.width, canvas.height);
+
+      const pngUrl = canvas.toDataURL("image/png");
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob((generatedBlob) => resolve(generatedBlob), "image/png", 1);
+      });
+
+      setFramedImage(pngUrl);
+      setFramedBlob(blob);
+    } finally {
+      setIsCompositing(false);
+    }
+  }, []);
+
+  const capturePhoto = useCallback(async () => {
+    if (!videoRef.current) {
+      return;
+    }
+
+    const video = videoRef.current;
+    if (!video.videoWidth || !video.videoHeight) {
+      return;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      return;
+    }
+
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const image = canvas.toDataURL("image/jpeg", 0.95);
+
+    stopCamera();
+    setSourceImage(image);
+    setMode("result");
+    await composeFramedPhoto(image);
+  }, [composeFramedPhoto, stopCamera]);
+
+  const onUploadPhoto = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) {
+        return;
+      }
+
+      const fileUrl = URL.createObjectURL(file);
+      stopCamera();
+      setSourceImage(fileUrl);
+      setMode("result");
+      await composeFramedPhoto(fileUrl);
+      event.target.value = "";
+    },
+    [composeFramedPhoto, stopCamera],
+  );
+
+  const downloadFramedPhoto = useCallback(() => {
+    if (!framedImage) {
+      return;
+    }
+
+    const link = document.createElement("a");
+    link.href = framedImage;
+    link.download = "linkup-colombo-frame-demo.png";
+    document.body.append(link);
+    link.click();
+    link.remove();
+  }, [framedImage]);
+
+  const shareFramedPhoto = useCallback(async () => {
+    if (!canShare) {
+      return;
+    }
+
+    setIsSharing(true);
+    try {
+      const sharePayload: ShareData = {
+        title: "LinkUp Colombo Frame Demo",
+        text: "I captured this from the LinkUp Colombo frame demo!",
+      };
+
+      if (framedBlob) {
+        const shareFile = new File([framedBlob], "linkup-colombo-frame-demo.png", {
+          type: "image/png",
+        });
+        if (navigator.canShare?.({ files: [shareFile] })) {
+          sharePayload.files = [shareFile];
+        }
+      }
+
+      await navigator.share(sharePayload);
+    } catch {
+      // Ignore if user dismisses native share sheet.
+    } finally {
+      setIsSharing(false);
+    }
+  }, [canShare, framedBlob]);
+
+  const resetFlow = useCallback(() => {
+    stopCamera();
+    setSourceImage("");
+    setFramedImage("");
+    setFramedBlob(null);
+    setCameraError("");
+    setMode("idle");
+  }, [stopCamera]);
+
+  useEffect(() => {
+    return () => {
+      stopCamera();
+      if (sourceImage.startsWith("blob:")) {
+        URL.revokeObjectURL(sourceImage);
+      }
+    };
+  }, [sourceImage, stopCamera]);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div className="linkup-page">
+      <header className="hero">
+        <div className="hero__grain" />
+        <div className="hero__content">
+          <p className="hero__kicker">LinkUp Colombo Frame Experience</p>
+          <h1>LinkUp Colombo Frame Demo</h1>
+          <p className="hero__subtitle">
+            Capture the moment in our signature frame, save it instantly, and share it
+            directly to social media.
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+      </header>
+
+      <main className="content-shell">
+        <section className="capture-panel" aria-labelledby="capture-title">
+          <div className="capture-panel__head">
+            <h2 id="capture-title">Capture or Upload</h2>
+            <p>
+              Use your phone camera or upload an existing photo. The frame preview is
+              always visible before and after capture.
+            </p>
+          </div>
+
+          <div className="capture-stage">
+            <div className="preview-box">
+              {(mode === "idle" || mode === "camera") && (
+                <video
+                  ref={videoRef}
+                  className={`preview-media ${mode === "camera" ? "is-visible" : ""}`}
+                  playsInline
+                  muted
+                  autoPlay
+                />
+              )}
+
+              {mode === "result" && sourceImage && (
+                <img
+                  src={sourceImage}
+                  alt="Selected capture"
+                  className="preview-media is-visible"
+                />
+              )}
+
+              <img src="/frame.png" alt="LinkUp frame overlay" className="preview-frame" />
+
+              {mode === "idle" && (
+                <div className="preview-empty">
+                  <p>Open camera or upload a photo to begin.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="capture-actions">
+              <button type="button" onClick={openCamera} className="btn btn--primary">
+                Open Camera
+              </button>
+
+              <button
+                type="button"
+                onClick={capturePhoto}
+                className="btn btn--accent"
+                disabled={mode !== "camera"}
+              >
+                Take Photo
+              </button>
+
+              <label htmlFor="upload-photo" className="btn btn--ghost">
+                Upload Photo
+              </label>
+              <input
+                id="upload-photo"
+                type="file"
+                accept="image/*"
+                onChange={onUploadPhoto}
+                className="visually-hidden"
+              />
+
+              <button type="button" onClick={resetFlow} className="btn btn--subtle">
+                Reset
+              </button>
+            </div>
+
+            {cameraError && <p className="status-message">{cameraError}</p>}
+          </div>
+        </section>
+
+        <section className="result-panel" aria-labelledby="result-title">
+          <div className="capture-panel__head">
+            <h2 id="result-title">Export and Share</h2>
+            <p>
+              Your final image is composited with the official LinkUp frame and ready to
+              post.
+            </p>
+          </div>
+
+          <div className="result-card">
+            {framedImage ? (
+              <img src={framedImage} alt="Final framed result" className="result-image" />
+            ) : (
+              <div className="result-placeholder">
+                <p>Your framed image will appear here after capture.</p>
+              </div>
+            )}
+
+            <div className="result-actions">
+              <button
+                type="button"
+                onClick={downloadFramedPhoto}
+                className="btn btn--primary"
+                disabled={!framedImage || isCompositing}
+              >
+                Save to Device
+              </button>
+
+              <button
+                type="button"
+                onClick={shareFramedPhoto}
+                className="btn btn--accent"
+                disabled={!framedImage || isCompositing || !canShare || isSharing}
+              >
+                {isSharing ? "Opening Share..." : "Share to Social"}
+              </button>
+            </div>
+
+            {!canShare && (
+              <p className="status-message">
+                Direct sharing is not available in this browser. You can still save and post
+                manually.
+              </p>
+            )}
+          </div>
+        </section>
       </main>
     </div>
   );
