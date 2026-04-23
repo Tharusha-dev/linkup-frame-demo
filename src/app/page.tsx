@@ -250,9 +250,6 @@ export default function Home() {
         <section className="capture-panel" aria-labelledby="capture-title">
           <div className="capture-panel__head">
             <h2 id="capture-title">Capture or Upload</h2>
-            <p>
-              Use your phone camera or upload an existing photo.
-            </p>
           </div>
 
           <div className="capture-stage">
@@ -367,6 +364,7 @@ export default function Home() {
                     type="button"
                     onClick={switchCamera}
                     className="btn btn--subtle"
+                    disabled={mode !== "camera"}
                     aria-label={`Switch camera to ${cameraFacing === "environment" ? "front" : "back"}`}
                     title={`Switch camera to ${cameraFacing === "environment" ? "front" : "back"}`}
                   >

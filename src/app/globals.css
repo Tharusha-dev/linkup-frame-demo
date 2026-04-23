@@ -78,45 +78,39 @@ body {
 .content-shell {
   margin: 0 auto;
   display: grid;
-  max-width: 1100px;
-  gap: 1.5rem;
-  padding: 1.5rem 1.25rem 2.2rem;
+  width: 100%;
+  max-width: 1400px;
+  gap: 1rem;
+  padding: 1rem;
 }
 
 .capture-panel,
 .result-panel {
   border: 3px solid #26201d;
   background: #f8f6ee;
-  padding: 1rem;
+  padding: 0.9rem;
   box-shadow: 0 8px 0 #201b18;
 }
 
 .capture-panel__head h2 {
   margin: 0;
   font-family: var(--font-display), sans-serif;
-  font-size: clamp(1.5rem, 4vw, 2.25rem);
+  font-size: clamp(1.25rem, 3vw, 1.9rem);
   line-height: 1;
   text-transform: uppercase;
   color: var(--linkup-orange-deep);
 }
 
-.capture-panel__head p {
-  margin-top: 0.6rem;
-  max-width: 66ch;
-  font-size: 0.95rem;
-  line-height: 1.5;
-}
-
 .capture-stage {
   margin-top: 1rem;
   display: grid;
-  gap: 1rem;
+  gap: 0.9rem;
 }
 
 .preview-box {
   position: relative;
   margin: 0 auto;
-  width: min(100%, 390px);
+  width: min(100%, 920px);
   aspect-ratio: 3 / 4;
   overflow: hidden;
   border: 2px solid #1f1915;
@@ -171,12 +165,16 @@ body {
 }
 
 .capture-actions {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
-  gap: 0.7rem;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 0.65rem;
+  overflow-x: auto;
+  padding-bottom: 0.2rem;
 }
 
 .btn {
+  flex: 1 1 0;
   border: 2px solid #1f1a17;
   min-height: 4rem;
   padding: 0.7rem;
@@ -196,6 +194,8 @@ body {
 .btn:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+  background: #d7d2be;
+  color: #7f776a;
 }
 
 .btn:not(:disabled):hover {
@@ -290,12 +290,12 @@ body {
 
 @media (min-width: 900px) {
   .content-shell {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    align-items: start;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
   }
 
   .capture-panel,
   .result-panel {
-    padding: 1.2rem;
+    padding: 1rem;
   }
 }
