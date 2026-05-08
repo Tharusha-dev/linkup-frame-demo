@@ -14,9 +14,17 @@ const displayFont = Bebas_Neue({
 });
 
 export const metadata: Metadata = {
-  title: "LinkUp Colombo Frame Demo",
+  title: "LinkUp x spytLabs Frame Capture",
   description:
-    "Demo web experience for LinkUp Colombo branded frame capture, upload, save, and social sharing.",
+    "Capture your moments at KopiKade with LinkUp's seamless frame capture experience, powered by spytLabs.",
+  icons: {
+    icon: [
+      { url: "/favicons/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicons/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicons/favicon-96x96.png", sizes: "96x96", type: "image/png" },
+    ],
+    apple: "/favicons/apple-touch-icon.png",
+  }
 };
 
 export default function RootLayout({

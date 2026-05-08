@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --linkup-orange: #ff5a00;
-  --linkup-orange-deep: #e84f00;
+  --linkup-orange: #d44f19;
+  --linkup-orange-deep: #d44f19;
   --linkup-cream: #e5edbe;
   --linkup-yellow: #f2cb4d;
   --linkup-ink: #1f1a17;
@@ -20,24 +20,27 @@
 }
 
 body {
-  background: var(--background);
+  background-image: url("../../public/bg.jpg");
+  background-size: cover;
+  background-position: center;
   color: var(--foreground);
   font-family: var(--font-body), sans-serif;
 }
 
 .linkup-page {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 10% -20%, #ffd36f66 0%, transparent 46%),
-    radial-gradient(circle at 95% 0%, #ff8a3d6b 0%, transparent 44%),
-    var(--linkup-cream);
 }
 
 .hero {
   position: relative;
   overflow: hidden;
   border-bottom: 4px solid var(--linkup-ink);
-  background: linear-gradient(130deg, var(--linkup-orange) 0%, #ff6300 55%, #ff7f2a 100%);
+  background: linear-gradient(
+    130deg,
+    var(--linkup-orange) 0%,
+    #d44f19 55%,
+    #ff712a 100%
+  );
   color: var(--linkup-white);
 }
 
@@ -54,7 +57,7 @@ body {
   position: relative;
   margin: 0 auto;
   max-width: 1100px;
-  padding: 1rem 1.25rem 1.1rem;
+  padding: 0.5rem;
 }
 
 .hero__kicker {
@@ -81,15 +84,7 @@ body {
   width: 100%;
   max-width: 1400px;
   gap: 1rem;
-  padding: 1rem;
-}
-
-.capture-panel,
-.result-panel {
-  border: 3px solid #26201d;
-  background: #f8f6ee;
-  padding: 0.9rem;
-  box-shadow: 0 8px 0 #201b18;
+  padding: 0.5rem;
 }
 
 .capture-panel__head h2 {
@@ -166,6 +161,7 @@ body {
   text-align: center;
   font-size: 0.93rem;
   font-weight: 600;
+  margin-inline: 3rem;
 }
 
 .capture-actions {

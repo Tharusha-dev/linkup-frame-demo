@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import headerImg from "../../public/viriththan.png"
 
 type CaptureMode = "idle" | "camera" | "result";
 
@@ -254,16 +255,12 @@ export default function Home() {
       <header className="hero">
         <div className="hero__grain" />
         <div className="hero__content">
-          <p className="hero__kicker">LinkUp Colombo Frame Demo</p>
-          <h1>Frame your shot</h1>
+          <img src={headerImg.src} alt="Viriththan" className="hero__image" />
         </div>
       </header>
 
       <main className="content-shell">
         <section className="capture-panel" aria-labelledby="capture-title">
-          <div className="capture-panel__head">
-            <h2 id="capture-title">Capture or Upload</h2>
-          </div>
 
           <div className="capture-stage">
             <div className="preview-box">
@@ -299,7 +296,7 @@ export default function Home() {
 
               {mode === "idle" && (
                 <div className="preview-empty">
-                  <p>Open camera or upload a photo to begin.</p>
+                  <p>Open camera or upload a photo.</p>
                 </div>
               )}
             </div>
