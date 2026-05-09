@@ -1,6 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  LuRotateCcw,
+  LuDownload,
+  LuShare2,
+  LuCamera,
+  LuCircle,
+  LuUpload,
+  LuRefreshCw,
+} from "react-icons/lu";
 import headerImg from "../../public/viriththan.png"
 
 type CaptureMode = "idle" | "camera" | "result";
@@ -504,16 +513,16 @@ export default function Home() {
 
               <img src="/frame.png" alt="LinkUp frame overlay" className="preview-frame" />
 
-              {mode === "result" && sourceImage && (
-                <p className="preview-editor__hint">Use two fingers to zoom. Swipe to reposition.</p>
-              )}
-
               {mode === "idle" && (
                 <div className="preview-empty">
                   <p>Open camera or upload a photo.</p>
                 </div>
               )}
             </div>
+
+            {mode === "result" && sourceImage && (
+              <p className="preview-editor__hint">Use two fingers to zoom. Swipe to reposition.</p>
+            )}
 
             <div className="capture-actions">
               {mode === "result" ? (
@@ -525,7 +534,8 @@ export default function Home() {
                     aria-label="Reset crop"
                     title="Reset crop"
                   >
-                    Reset Crop
+                    <LuRotateCcw />
+                    <span>Reset</span>
                   </button>
 
                   <button
@@ -536,7 +546,8 @@ export default function Home() {
                     aria-label="Save to device"
                     title="Save to device"
                   >
-                    Save to Device
+                    <LuDownload />
+                    <span>Save</span>
                   </button>
 
                   <button
@@ -547,7 +558,8 @@ export default function Home() {
                     aria-label="Share to social"
                     title="Share to social"
                   >
-                    Share to Social
+                    <LuShare2 />
+                    <span>Share</span>
                   </button>
 
                   <button
@@ -557,7 +569,8 @@ export default function Home() {
                     aria-label="Retake photo"
                     title="Retake photo"
                   >
-                    Retake Photo
+                    <LuCamera />
+                    <span>Retake</span>
                   </button>
                 </>
               ) : (
@@ -569,7 +582,8 @@ export default function Home() {
                     aria-label="Open camera"
                     title="Open camera"
                   >
-                    Open Camera
+                    <LuCamera />
+                    <span>Camera</span>
                   </button>
 
                   <button
@@ -580,11 +594,13 @@ export default function Home() {
                     aria-label="Take photo"
                     title="Take photo"
                   >
-                    Take Photo
+                    <LuCircle />
+                    <span>Capture</span>
                   </button>
 
                   <label htmlFor="upload-photo" className="btn btn--ghost" aria-label="Upload photo" title="Upload photo">
-                    Upload Photo
+                    <LuUpload />
+                    <span>Upload</span>
                   </label>
                   <input
                     id="upload-photo"
@@ -613,7 +629,8 @@ export default function Home() {
                     aria-label={`Switch camera to ${cameraFacing === "environment" ? "front" : "back"}`}
                     title={`Switch camera to ${cameraFacing === "environment" ? "front" : "back"}`}
                   >
-                    Switch Camera
+                    <LuRefreshCw />
+                    <span>Flip</span>
                   </button>
                 </>
               )}
