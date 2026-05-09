@@ -5,6 +5,60 @@ import headerImg from "../../public/viriththan.png"
 
 type CaptureMode = "idle" | "camera" | "result";
 
+type CropTransform = {
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+};
+
+const INITIAL_CROP_TRANSFORM: CropTransform = {
+  scale: 1,
+  offsetX: 0,
+  offsetY: 0,
+};
+
+const MIN_CROP_SCALE = 1;
+const MAX_CROP_SCALE = 3;
+const CROP_ZOOM_STEP = 0.15;
+
+type PointerPoint = {
+  x: number;
+  y: number;
+};
+
+type GestureState = {
+  pointers: Map<number, PointerPoint>;
+  startTransform: CropTransform;
+  startPointer: PointerPoint | null;
+  startDistance: number;
+  startCenter: PointerPoint | null;
+};
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function clampCropTransform(transform: CropTransform): CropTransform {
+  const maxOffset = Math.max(0, (transform.scale - 1) / 2);
+
+  return {
+    scale: clamp(transform.scale, MIN_CROP_SCALE, MAX_CROP_SCALE),
+    offsetX: clamp(transform.offsetX, -maxOffset, maxOffset),
+    offsetY: clamp(transform.offsetY, -maxOffset, maxOffset),
+  };
+}
+
+function getDistance(first: PointerPoint, second: PointerPoint) {
+  return Math.hypot(second.x - first.x, second.y - first.y);
+}
+
+function getCenter(first: PointerPoint, second: PointerPoint) {
+  return {
+    x: (first.x + second.x) / 2,
+    y: (first.y + second.y) / 2,
+  };
+}
+
 function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new Image();
@@ -35,15 +89,16 @@ function drawCoverImage(
 export default function Home() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const nativeCaptureInputRef = useRef<HTMLInputElement | null>(null);
+  const cropEditorRef = useRef<HTMLDivElement | null>(null);
+  const gestureRef = useRef<GestureState | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [mode, setMode] = useState<CaptureMode>("idle");
   const [cameraFacing, setCameraFacing] = useState<"environment" | "user">("user");
   const [cameraError, setCameraError] = useState<string>("");
   const [sourceImage, setSourceImage] = useState<string>("");
-  const [framedImage, setFramedImage] = useState<string>("");
-  const [framedBlob, setFramedBlob] = useState<Blob | null>(null);
   const [shouldMirrorResult, setShouldMirrorResult] = useState(false);
-  const [isCompositing, setIsCompositing] = useState(false);
+  const [cropTransform, setCropTransform] = useState<CropTransform>(INITIAL_CROP_TRANSFORM);
+  const isCompositing = false;
   const [isSharing, setIsSharing] = useState(false);
 
   const canShare = useMemo(
@@ -120,43 +175,46 @@ export default function Home() {
     setCameraFacing(nextFacing);
   }, [cameraFacing, mode, openCamera]);
 
-  const composeFramedPhoto = useCallback(async (photoUrl: string, mirrorPhoto = false) => {
-    setIsCompositing(true);
-    try {
-      const [photo, frame] = await Promise.all([
-        loadImage(photoUrl),
-        loadImage("/frame.png"),
-      ]);
-      const canvas = document.createElement("canvas");
-      canvas.width = frame.naturalWidth;
-      canvas.height = frame.naturalHeight;
-      const context = canvas.getContext("2d");
+  const buildFramedPhoto = useCallback(async (
+    photoUrl: string,
+    mirrorPhoto = false,
+    transform: CropTransform = INITIAL_CROP_TRANSFORM,
+  ) => {
+    const [photo, frame] = await Promise.all([
+      loadImage(photoUrl),
+      loadImage("/frame.png"),
+    ]);
+    const canvas = document.createElement("canvas");
+    canvas.width = frame.naturalWidth;
+    canvas.height = frame.naturalHeight;
+    const context = canvas.getContext("2d");
 
-      if (!context) {
-        throw new Error("Canvas not supported");
-      }
-
-      if (mirrorPhoto) {
-        context.save();
-        context.translate(canvas.width, 0);
-        context.scale(-1, 1);
-        drawCoverImage(context, photo, canvas.width, canvas.height);
-        context.restore();
-      } else {
-        drawCoverImage(context, photo, canvas.width, canvas.height);
-      }
-      context.drawImage(frame, 0, 0, canvas.width, canvas.height);
-
-      const pngUrl = canvas.toDataURL("image/png");
-      const blob = await new Promise<Blob | null>((resolve) => {
-        canvas.toBlob((generatedBlob) => resolve(generatedBlob), "image/png", 1);
-      });
-
-      setFramedImage(pngUrl);
-      setFramedBlob(blob);
-    } finally {
-      setIsCompositing(false);
+    if (!context) {
+      throw new Error("Canvas not supported");
     }
+
+    context.save();
+    if (mirrorPhoto) {
+      context.translate(canvas.width, 0);
+      context.scale(-1, 1);
+    }
+
+    context.translate(
+      canvas.width / 2 + transform.offsetX * canvas.width,
+      canvas.height / 2 + transform.offsetY * canvas.height,
+    );
+    context.scale(transform.scale, transform.scale);
+    context.translate(-canvas.width / 2, -canvas.height / 2);
+    drawCoverImage(context, photo, canvas.width, canvas.height);
+    context.restore();
+    context.drawImage(frame, 0, 0, canvas.width, canvas.height);
+
+    const pngUrl = canvas.toDataURL("image/png");
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob((generatedBlob) => resolve(generatedBlob), "image/png", 1);
+    });
+
+    return { pngUrl, blob };
   }, []);
 
   const capturePhoto = useCallback(async () => {
@@ -185,12 +243,12 @@ export default function Home() {
     stopCamera();
     setSourceImage(image);
     setShouldMirrorResult(mirrorCapture);
+    setCropTransform(INITIAL_CROP_TRANSFORM);
     setMode("result");
-    await composeFramedPhoto(image, mirrorCapture);
-  }, [cameraFacing, composeFramedPhoto, stopCamera]);
+  }, [cameraFacing, stopCamera]);
 
   const processSelectedFile = useCallback(
-    async (event: React.ChangeEvent<HTMLInputElement>) => {
+    async (event: React.ChangeEvent<HTMLInputElement>, mirrorResult: boolean) => {
       const file = event.target.files?.[0];
       if (!file) {
         return;
@@ -199,44 +257,57 @@ export default function Home() {
       const fileUrl = URL.createObjectURL(file);
       stopCamera();
       setSourceImage(fileUrl);
-      setShouldMirrorResult(false);
+      setShouldMirrorResult(mirrorResult);
+      setCropTransform(INITIAL_CROP_TRANSFORM);
       setMode("result");
-      await composeFramedPhoto(fileUrl);
       event.target.value = "";
     },
-    [composeFramedPhoto, stopCamera],
+    [stopCamera],
   );
 
-  const onUploadPhoto = processSelectedFile;
-  const onNativeCapturePhoto = processSelectedFile;
+  const onUploadPhoto = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      void processSelectedFile(event, false);
+    },
+    [processSelectedFile],
+  );
 
-  const downloadFramedPhoto = useCallback(() => {
-    if (!framedImage) {
+  const onNativeCapturePhoto = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      void processSelectedFile(event, cameraFacing === "user");
+    },
+    [cameraFacing, processSelectedFile],
+  );
+
+  const downloadFramedPhoto = useCallback(async () => {
+    if (!sourceImage) {
       return;
     }
 
+    const { pngUrl } = await buildFramedPhoto(sourceImage, shouldMirrorResult, cropTransform);
     const link = document.createElement("a");
-    link.href = framedImage;
+    link.href = pngUrl;
     link.download = "linkup-colombo-frame-demo.png";
     document.body.append(link);
     link.click();
     link.remove();
-  }, [framedImage]);
+  }, [buildFramedPhoto, cropTransform, shouldMirrorResult, sourceImage]);
 
   const shareFramedPhoto = useCallback(async () => {
-    if (!canShare) {
+    if (!canShare || !sourceImage) {
       return;
     }
 
     setIsSharing(true);
     try {
+      const { blob } = await buildFramedPhoto(sourceImage, shouldMirrorResult, cropTransform);
       const sharePayload: ShareData = {
         title: "LinkUp Colombo Frame Demo",
         text: "I captured this from the LinkUp Colombo frame demo!",
       };
 
-      if (framedBlob) {
-        const shareFile = new File([framedBlob], "linkup-colombo-frame-demo.png", {
+      if (blob) {
+        const shareFile = new File([blob], "linkup-colombo-frame-demo.png", {
           type: "image/png",
         });
         if (navigator.canShare?.({ files: [shareFile] })) {
@@ -250,14 +321,122 @@ export default function Home() {
     } finally {
       setIsSharing(false);
     }
-  }, [canShare, framedBlob]);
+  }, [buildFramedPhoto, canShare, cropTransform, shouldMirrorResult, sourceImage]);
+
+  const adjustZoom = useCallback((delta: number) => {
+    setCropTransform((current) =>
+      clampCropTransform({
+        ...current,
+        scale: current.scale + delta,
+      }),
+    );
+  }, []);
+
+  const resetCrop = useCallback(() => {
+    setCropTransform(INITIAL_CROP_TRANSFORM);
+  }, []);
+
+  const handleCropPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!sourceImage || mode !== "result") {
+      return;
+    }
+
+    const editor = cropEditorRef.current;
+    if (!editor) {
+      return;
+    }
+
+    editor.setPointerCapture(event.pointerId);
+
+    const activePointers = new Map(gestureRef.current?.pointers ?? []);
+    activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const pointerValues = Array.from(activePointers.values());
+    const firstPointer = pointerValues[0] ?? null;
+    const secondPointer = pointerValues[1] ?? null;
+
+    gestureRef.current = {
+      pointers: activePointers,
+      startTransform: cropTransform,
+      startPointer: firstPointer,
+      startDistance: firstPointer && secondPointer ? getDistance(firstPointer, secondPointer) : 0,
+      startCenter: firstPointer && secondPointer ? getCenter(firstPointer, secondPointer) : null,
+    };
+  }, [cropTransform, mode, sourceImage]);
+
+  const handleCropPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const gesture = gestureRef.current;
+    const editor = cropEditorRef.current;
+    if (!gesture || !editor || mode !== "result" || !sourceImage) {
+      return;
+    }
+
+    if (!gesture.pointers.has(event.pointerId)) {
+      return;
+    }
+
+    gesture.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const points = Array.from(gesture.pointers.values());
+    const rect = editor.getBoundingClientRect();
+
+    if (rect.width === 0 || rect.height === 0) {
+      return;
+    }
+
+    if (points.length >= 2 && gesture.startCenter && gesture.startDistance > 0) {
+      const currentCenter = getCenter(points[0], points[1]);
+      const currentDistance = getDistance(points[0], points[1]);
+      const nextScale = clamp(
+        gesture.startTransform.scale * (currentDistance / gesture.startDistance),
+        MIN_CROP_SCALE,
+        MAX_CROP_SCALE,
+      );
+
+      setCropTransform(clampCropTransform({
+        scale: nextScale,
+        offsetX: gesture.startTransform.offsetX + (currentCenter.x - gesture.startCenter.x) / rect.width,
+        offsetY: gesture.startTransform.offsetY + (currentCenter.y - gesture.startCenter.y) / rect.height,
+      }));
+      return;
+    }
+
+    if (gesture.startPointer) {
+      setCropTransform(clampCropTransform({
+        scale: gesture.startTransform.scale,
+        offsetX: gesture.startTransform.offsetX + (event.clientX - gesture.startPointer.x) / rect.width,
+        offsetY: gesture.startTransform.offsetY + (event.clientY - gesture.startPointer.y) / rect.height,
+      }));
+    }
+  }, [mode, sourceImage]);
+
+  const handleCropPointerEnd = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const editor = cropEditorRef.current;
+    if (editor) {
+      try {
+        editor.releasePointerCapture(event.pointerId);
+      } catch {
+        // Ignore if capture was already lost.
+      }
+    }
+
+    gestureRef.current = null;
+  }, []);
+
+  const handleCropWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
+    if (mode !== "result" || !sourceImage) {
+      return;
+    }
+
+    event.preventDefault();
+    const zoomStep = event.deltaY > 0 ? -CROP_ZOOM_STEP : CROP_ZOOM_STEP;
+    adjustZoom(zoomStep);
+  }, [adjustZoom, mode, sourceImage]);
 
   const resetFlow = useCallback(() => {
     stopCamera();
     setSourceImage("");
-    setFramedImage("");
-    setFramedBlob(null);
     setShouldMirrorResult(false);
+    setCropTransform(INITIAL_CROP_TRANSFORM);
+    gestureRef.current = null;
     setCameraError("");
     setMode("idle");
     setCameraFacing("user");
@@ -296,25 +475,33 @@ export default function Home() {
                 />
               )}
 
-              {mode === "result" && framedImage && (
-                <img
-                  src={framedImage}
-                  alt="Final framed capture preview"
-                  className="preview-media is-visible"
-                />
+              {mode === "result" && sourceImage && (
+                <div
+                  ref={cropEditorRef}
+                  className="preview-editor"
+                  onPointerDown={handleCropPointerDown}
+                  onPointerMove={handleCropPointerMove}
+                  onPointerUp={handleCropPointerEnd}
+                  onPointerCancel={handleCropPointerEnd}
+                  onWheel={handleCropWheel}
+                  style={{ touchAction: "none" }}
+                >
+                  <img
+                    src={sourceImage}
+                    alt="Captured photo to adjust"
+                    className="preview-media preview-media--editable is-visible"
+                    style={{
+                      transform: `${shouldMirrorResult ? "scaleX(-1) " : ""}translate(${cropTransform.offsetX * 100}%, ${cropTransform.offsetY * 100}%) scale(${cropTransform.scale})`,
+                    }}
+                    draggable={false}
+                  />
+
+                  <div className="preview-editor__overlay" />
+                  <p className="preview-editor__hint">Drag to reframe. Pinch or scroll to zoom.</p>
+                </div>
               )}
 
-              {mode === "result" && !framedImage && sourceImage && (
-                <img
-                  src={sourceImage}
-                  alt="Framed capture preview"
-                  className={`preview-media is-visible ${shouldMirrorResult ? "preview-media--mirrored" : ""}`}
-                />
-              )}
-
-              {mode !== "result" && (
-                <img src="/frame.png" alt="LinkUp frame overlay" className="preview-frame" />
-              )}
+              <img src="/frame.png" alt="LinkUp frame overlay" className="preview-frame" />
 
               {mode === "idle" && (
                 <div className="preview-empty">
@@ -328,9 +515,42 @@ export default function Home() {
                 <>
                   <button
                     type="button"
+                    onClick={() => adjustZoom(-CROP_ZOOM_STEP)}
+                    className="btn btn--subtle"
+                    aria-label="Zoom out"
+                    title="Zoom out"
+                    disabled={isCompositing}
+                  >
+                    Zoom Out
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={resetCrop}
+                    className="btn btn--ghost"
+                    aria-label="Reset crop"
+                    title="Reset crop"
+                    disabled={isCompositing}
+                  >
+                    Reset Crop
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => adjustZoom(CROP_ZOOM_STEP)}
+                    className="btn btn--subtle"
+                    aria-label="Zoom in"
+                    title="Zoom in"
+                    disabled={isCompositing}
+                  >
+                    Zoom In
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={downloadFramedPhoto}
                     className="btn btn--primary"
-                    disabled={!framedImage || isCompositing}
+                    disabled={!sourceImage || isCompositing}
                     aria-label="Save to device"
                     title="Save to device"
                   >
@@ -341,7 +561,7 @@ export default function Home() {
                     type="button"
                     onClick={shareFramedPhoto}
                     className="btn btn--accent"
-                    disabled={!framedImage || isCompositing || !canShare || isSharing}
+                    disabled={!sourceImage || isCompositing || !canShare || isSharing}
                     aria-label="Share to social"
                     title="Share to social"
                   >
