@@ -77,6 +77,53 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
+function getEXIFOrientation(blob: Blob): Promise<number> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const arr = new Uint8Array(e.target?.result as ArrayBuffer).subarray(0, 4);
+      if (arr[0] !== 0xff || arr[1] !== 0xd8 || arr[2] !== 0xff) {
+        resolve(1); // Not a JPEG, return default orientation
+        return;
+      }
+
+      const view = new DataView(e.target?.result as ArrayBuffer);
+      let offset = 2;
+      while (offset < view.byteLength) {
+        if (view.getUint16(offset) === 0xffe1) {
+          const length = view.getUint16(offset + 2) + 2;
+          if (
+            view.getUint32(offset + 4) === 0x45786966
+          ) {
+            const exifData = view.getUint8(offset + 9);
+            let oritentation = 1;
+
+            const tiffOffset = offset + 8 + exifData;
+            const littleEndian = view.getUint16(tiffOffset) === 0x4949;
+
+            let tags = view.getUint16(tiffOffset + 8, littleEndian);
+            for (let i = 0; i < tags; i++) {
+              const tagOffset = tiffOffset + 10 + i * 12;
+              if (
+                view.getUint16(tagOffset, littleEndian) === 0x0112
+              ) {
+                oritentation = view.getUint16(tagOffset + 8, littleEndian);
+                resolve(oritentation);
+                return;
+              }
+            }
+          }
+          resolve(1);
+          return;
+        }
+        offset += 2;
+      }
+      resolve(1);
+    };
+    reader.readAsArrayBuffer(blob);
+  });
+}
+
 function drawCoverImage(
   context: CanvasRenderingContext2D,
   image: HTMLImageElement,
@@ -105,6 +152,7 @@ export default function Home() {
   const [cameraFacing, setCameraFacing] = useState<"environment" | "user">("user");
   const [cameraError, setCameraError] = useState<string>("");
   const [sourceImage, setSourceImage] = useState<string>("");
+  const [sourceBlob, setSourceBlob] = useState<Blob | null>(null);
   const [shouldMirrorResult, setShouldMirrorResult] = useState(false);
   const [cropTransform, setCropTransform] = useState<CropTransform>(INITIAL_CROP_TRANSFORM);
   const isCompositing = false;
@@ -188,11 +236,18 @@ export default function Home() {
     photoUrl: string,
     mirrorPhoto = false,
     transform: CropTransform = INITIAL_CROP_TRANSFORM,
+    photoBlob: Blob | null = null,
   ) => {
     const [photo, frame] = await Promise.all([
       loadImage(photoUrl),
       loadImage("/frame.png"),
     ]);
+    
+    let orientation = 1;
+    if (photoBlob) {
+      orientation = await getEXIFOrientation(photoBlob);
+    }
+
     const canvas = document.createElement("canvas");
     canvas.width = frame.naturalWidth;
     canvas.height = frame.naturalHeight;
@@ -214,6 +269,40 @@ export default function Home() {
     );
     context.scale(transform.scale, transform.scale);
     context.translate(-canvas.width / 2, -canvas.height / 2);
+    
+    // Apply EXIF orientation correction
+    switch (orientation) {
+      case 2:
+        context.translate(photo.naturalWidth, 0);
+        context.scale(-1, 1);
+        break;
+      case 3:
+        context.translate(photo.naturalWidth, photo.naturalHeight);
+        context.rotate(Math.PI);
+        break;
+      case 4:
+        context.translate(0, photo.naturalHeight);
+        context.scale(1, -1);
+        break;
+      case 5:
+        context.rotate(Math.PI / 2);
+        context.scale(1, -1);
+        break;
+      case 6:
+        context.rotate(Math.PI / 2);
+        context.translate(0, -photo.naturalWidth);
+        break;
+      case 7:
+        context.rotate(-Math.PI / 2);
+        context.translate(-photo.naturalHeight, 0);
+        context.scale(1, -1);
+        break;
+      case 8:
+        context.rotate(-Math.PI / 2);
+        context.translate(-photo.naturalHeight, 0);
+        break;
+    }
+    
     drawCoverImage(context, photo, canvas.width, canvas.height);
     context.restore();
     context.drawImage(frame, 0, 0, canvas.width, canvas.height);
@@ -266,6 +355,7 @@ export default function Home() {
       const fileUrl = URL.createObjectURL(file);
       stopCamera();
       setSourceImage(fileUrl);
+      setSourceBlob(file);
       setShouldMirrorResult(mirrorResult);
       setCropTransform(INITIAL_CROP_TRANSFORM);
       setMode("result");
@@ -293,14 +383,14 @@ export default function Home() {
       return;
     }
 
-    const { pngUrl } = await buildFramedPhoto(sourceImage, shouldMirrorResult, cropTransform);
+    const { pngUrl } = await buildFramedPhoto(sourceImage, shouldMirrorResult, cropTransform, sourceBlob);
     const link = document.createElement("a");
     link.href = pngUrl;
     link.download = "linkup-colombo-frame-demo.png";
     document.body.append(link);
     link.click();
     link.remove();
-  }, [buildFramedPhoto, cropTransform, shouldMirrorResult, sourceImage]);
+  }, [buildFramedPhoto, cropTransform, shouldMirrorResult, sourceImage, sourceBlob]);
 
   const shareFramedPhoto = useCallback(async () => {
     if (!canShare || !sourceImage) {
@@ -309,7 +399,7 @@ export default function Home() {
 
     setIsSharing(true);
     try {
-      const { blob } = await buildFramedPhoto(sourceImage, shouldMirrorResult, cropTransform);
+      const { blob } = await buildFramedPhoto(sourceImage, shouldMirrorResult, cropTransform, sourceBlob);
       const sharePayload: ShareData = {
         title: "LinkUp Colombo Frame Demo",
         text: "I captured this from the LinkUp Colombo frame demo!",
@@ -330,7 +420,7 @@ export default function Home() {
     } finally {
       setIsSharing(false);
     }
-  }, [buildFramedPhoto, canShare, cropTransform, shouldMirrorResult, sourceImage]);
+  }, [buildFramedPhoto, canShare, cropTransform, shouldMirrorResult, sourceImage, sourceBlob]);
 
   const adjustZoom = useCallback((delta: number) => {
     setCropTransform((current) =>
@@ -445,6 +535,7 @@ export default function Home() {
   const resetFlow = useCallback(() => {
     stopCamera();
     setSourceImage("");
+    setSourceBlob(null);
     setShouldMirrorResult(false);
     setCropTransform(INITIAL_CROP_TRANSFORM);
     gestureRef.current = null;
