@@ -158,7 +158,7 @@ export default function Home() {
   const [cropTransform, setCropTransform] = useState<CropTransform>(INITIAL_CROP_TRANSFORM);
   const isCompositing = false;
   const [isSharing, setIsSharing] = useState(false);
-
+  const [isManuallyFlipped, setIsManuallyFlipped] = useState(false);
   const canShare = useMemo(
     () => typeof navigator !== "undefined" && typeof navigator.share === "function",
     [],
@@ -262,7 +262,7 @@ export default function Home() {
     }
 
     context.save();
-    if (mirrorPhoto) {
+    if (mirrorPhoto && !fromNativeCamera) {
       context.translate(canvas.width, 0);
       context.scale(-1, 1);
     }
@@ -378,9 +378,9 @@ export default function Home() {
 
   const onNativeCapturePhoto = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
-      void processSelectedFile(event, cameraFacing === "user", true);
+      void processSelectedFile(event, false, true);
     },
-    [cameraFacing, processSelectedFile],
+    [processSelectedFile],
   );
 
   const downloadFramedPhoto = useCallback(async () => {
@@ -388,14 +388,14 @@ export default function Home() {
       return;
     }
 
-    const { pngUrl } = await buildFramedPhoto(sourceImage, shouldMirrorResult, cropTransform, sourceBlob, isFromNativeCamera);
+      const { pngUrl } = await buildFramedPhoto(sourceImage, shouldMirrorResult || isManuallyFlipped, cropTransform, sourceBlob, isFromNativeCamera);
     const link = document.createElement("a");
     link.href = pngUrl;
     link.download = "linkup-colombo-frame-demo.png";
     document.body.append(link);
     link.click();
     link.remove();
-  }, [buildFramedPhoto, cropTransform, shouldMirrorResult, sourceImage, sourceBlob, isFromNativeCamera]);
+  }, [buildFramedPhoto, cropTransform, shouldMirrorResult, isManuallyFlipped, sourceImage, sourceBlob, isFromNativeCamera]);
 
   const shareFramedPhoto = useCallback(async () => {
     if (!canShare || !sourceImage) {
@@ -404,7 +404,7 @@ export default function Home() {
 
     setIsSharing(true);
     try {
-      const { blob } = await buildFramedPhoto(sourceImage, shouldMirrorResult, cropTransform, sourceBlob, isFromNativeCamera);
+        const { blob } = await buildFramedPhoto(sourceImage, shouldMirrorResult || isManuallyFlipped, cropTransform, sourceBlob, isFromNativeCamera);
       const sharePayload: ShareData = {
         title: "LinkUp Colombo Frame Demo",
         text: "I captured this from the LinkUp Colombo frame demo!",
@@ -425,7 +425,7 @@ export default function Home() {
     } finally {
       setIsSharing(false);
     }
-  }, [buildFramedPhoto, canShare, cropTransform, shouldMirrorResult, sourceImage, sourceBlob, isFromNativeCamera]);
+  }, [buildFramedPhoto, canShare, cropTransform, shouldMirrorResult, isManuallyFlipped, sourceImage, sourceBlob, isFromNativeCamera]);
 
   const adjustZoom = useCallback((delta: number) => {
     setCropTransform((current) =>
@@ -436,9 +436,13 @@ export default function Home() {
     );
   }, []);
 
-  const resetCrop = useCallback(() => {
-    setCropTransform(INITIAL_CROP_TRANSFORM);
-  }, []);
+   const resetCrop = useCallback(() => {
+     setCropTransform(INITIAL_CROP_TRANSFORM);
+   }, []);
+
+   const toggleFlipImage = useCallback(() => {
+     setIsManuallyFlipped((prev) => !prev);
+   }, []);
 
   const handleCropPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!sourceImage || mode !== "result") {
@@ -543,6 +547,7 @@ export default function Home() {
     setSourceBlob(null);
     setIsFromNativeCamera(false);
     setShouldMirrorResult(false);
+      setIsManuallyFlipped(false);
     setCropTransform(INITIAL_CROP_TRANSFORM);
     gestureRef.current = null;
     setCameraError("");
@@ -599,7 +604,7 @@ export default function Home() {
                     alt="Captured photo to adjust"
                     className="preview-media preview-media--editable is-visible"
                     style={{
-                      transform: `${shouldMirrorResult ? "scaleX(-1) " : ""}translate(${cropTransform.offsetX * 100}%, ${cropTransform.offsetY * 100}%) scale(${cropTransform.scale})`,
+                       transform: `${shouldMirrorResult || isManuallyFlipped ? "scaleX(-1) " : ""}translate(${cropTransform.offsetX * 100}%, ${cropTransform.offsetY * 100}%) scale(${cropTransform.scale})`,
                     }}
                     draggable={false}
                   />
@@ -634,6 +639,17 @@ export default function Home() {
                     <LuRotateCcw />
                     <span>Reset</span>
                   </button>
+
+                   <button
+                     type="button"
+                     onClick={toggleFlipImage}
+                     className="btn btn--subtle"
+                     aria-label="Flip image"
+                     title="Flip image horizontally"
+                   >
+                     <LuRefreshCw />
+                     <span>Flip</span>
+                   </button>
 
                   <button
                     type="button"
