@@ -90,34 +90,42 @@ function getEXIFOrientation(blob: Blob): Promise<number> {
 
       const view = new DataView(e.target?.result as ArrayBuffer);
       let offset = 2;
-      while (offset < view.byteLength) {
-        if (view.getUint16(offset) === 0xffe1) {
-          const length = view.getUint16(offset + 2) + 2;
+      while (offset + 4 < view.byteLength) {
+        const marker = view.getUint16(offset);
+        // Segment length field is 2 bytes starting at offset+2 (excludes the
+        // 2-byte marker but includes itself, so total segment = 2 + length).
+        const segmentLength = view.getUint16(offset + 2);
+
+        if (marker === 0xffe1) {
+          // APP1 – check for "Exif\0\0" header (0x45786966 = "Exif")
           if (
+            offset + 10 < view.byteLength &&
             view.getUint32(offset + 4) === 0x45786966
           ) {
-            const exifData = view.getUint8(offset + 9);
-            let oritentation = 1;
+            // TIFF header starts 8 bytes after the segment start (after marker,
+            // length, "Exif", null-null padding).
+            const tiffOffset = offset + 10;
+            if (tiffOffset + 8 >= view.byteLength) break;
 
-            const tiffOffset = offset + 8 + exifData;
             const littleEndian = view.getUint16(tiffOffset) === 0x4949;
+            const tags = view.getUint16(tiffOffset + 8, littleEndian);
 
-            let tags = view.getUint16(tiffOffset + 8, littleEndian);
             for (let i = 0; i < tags; i++) {
               const tagOffset = tiffOffset + 10 + i * 12;
-              if (
-                view.getUint16(tagOffset, littleEndian) === 0x0112
-              ) {
-                oritentation = view.getUint16(tagOffset + 8, littleEndian);
-                resolve(oritentation);
+              if (tagOffset + 10 > view.byteLength) break;
+              if (view.getUint16(tagOffset, littleEndian) === 0x0112) {
+                resolve(view.getUint16(tagOffset + 8, littleEndian));
                 return;
               }
             }
           }
+          // APP1 without Exif or no orientation tag found – default.
           resolve(1);
           return;
         }
-        offset += 2;
+
+        // Advance past this segment: 2-byte marker + segmentLength bytes.
+        offset += 2 + segmentLength;
       }
       resolve(1);
     };
@@ -249,10 +257,12 @@ export default function Home() {
       loadImage("/frame.png"),
     ]);
 
-    // Only apply EXIF orientation correction for file uploads, not native camera
-    // (native camera apps already handle orientation correctly)
+    // Always apply EXIF orientation correction when a blob is available.
+    // iOS native camera photos embed EXIF orientation data that browsers do NOT
+    // auto-apply when drawing to a canvas (only <img> tags honour it), so we
+    // must read and apply it ourselves regardless of the capture path.
     let orientation = 1;
-    if (photoBlob && !fromNativeCamera) {
+    if (photoBlob) {
       orientation = await getEXIFOrientation(photoBlob);
     }
 
@@ -266,7 +276,7 @@ export default function Home() {
     }
 
     context.save();
-    if (mirrorPhoto && !fromNativeCamera) {
+    if (mirrorPhoto) {
       context.translate(canvas.width, 0);
       context.scale(-1, 1);
     }
