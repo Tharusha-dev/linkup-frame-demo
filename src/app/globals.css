@@ -191,12 +191,6 @@ body {
 }
 
 .preview-editor__hint {
-  pointer-events: none;
-  position: absolute;
-  left: 0.9rem;
-  right: 0.9rem;
-  bottom: 0.9rem;
-  z-index: 4;
   margin: 0;
   border: 2px solid #1f1915;
   background: #fff6d6;
@@ -232,12 +226,14 @@ body {
   flex: 1 1 0;
   border: 2px solid #1f1a17;
   min-height: 4rem;
-  padding: 0.7rem;
-  display: inline-flex;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 0.3rem;
   font-family: var(--font-display), sans-serif;
-  font-size: 1.02rem;
+  font-size: 0.7rem;
   letter-spacing: 0.02em;
   text-transform: uppercase;
   cursor: pointer;
@@ -279,10 +275,15 @@ body {
 }
 
 .btn svg {
-  width: 1.55rem;
-  height: 1.55rem;
-  fill: currentColor;
+  width: 1.5rem;
+  height: 1.5rem;
   flex: none;
+}
+
+.btn span {
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .visually-hidden {
