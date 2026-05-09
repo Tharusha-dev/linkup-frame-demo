@@ -410,11 +410,6 @@ export default function Home() {
 
     setIsSaving(true);
     try {
-      try {
-        await logEvent("download", { via: "save_button" });
-      } catch {}
-      void incrementCounter("download");
-
       const { pngUrl, blob } = await buildFramedPhoto(
         sourceImage,
         shouldMirrorResult || isManuallyFlipped,
@@ -422,14 +417,6 @@ export default function Home() {
         sourceBlob,
         isFromNativeCamera,
       );
-
-      if (blob) {
-        try {
-          const filename = `download-${Date.now()}-${Math.floor(Math.random() * 10000)}.png`;
-          const res = await uploadFrame(blob, filename);
-          if (res?.error) console.error("Upload failed:", res.error);
-        } catch {}
-      }
 
       const isIOS =
         typeof navigator !== "undefined" &&
@@ -442,24 +429,59 @@ export default function Home() {
         });
 
         if (navigator.canShare?.({ files: [shareFile] }) && canShare) {
+          // Call share() FIRST — iOS invalidates the user-gesture token after
+          // any awaited async work, so the Supabase upload must happen after.
           await navigator.share({
             files: [shareFile],
             title: "LinkUp Colombo Frame Demo",
             text: "Save this image to your photos.",
           });
+
+          // Fire-and-forget upload after the share sheet is already open.
+          void (async () => {
+            try {
+              await logEvent("download", { via: "save_button" });
+            } catch {}
+            void incrementCounter("download");
+            try {
+              const filename = `download-${Date.now()}-${Math.floor(Math.random() * 10000)}.png`;
+              const res = await uploadFrame(blob, filename);
+              if (res?.error) console.error("Upload failed:", res.error);
+            } catch {}
+          })();
           return;
         }
 
+        // Fallback: open in new tab so the user can long-press to save.
         window.open(pngUrl, "_blank", "noopener,noreferrer");
+
+        void (async () => {
+          try { await logEvent("download", { via: "save_button" }); } catch {}
+          void incrementCounter("download");
+        })();
         return;
       }
 
+      // Non-iOS: standard anchor download.
       const link = document.createElement("a");
       link.href = pngUrl;
       link.download = `kopi-kade-frame-${Date.now()}.png`;
       document.body.append(link);
       link.click();
       link.remove();
+
+      // Upload + log after the download is triggered.
+      void (async () => {
+        try { await logEvent("download", { via: "save_button" }); } catch {}
+        void incrementCounter("download");
+        if (blob) {
+          try {
+            const filename = `download-${Date.now()}-${Math.floor(Math.random() * 10000)}.png`;
+            const res = await uploadFrame(blob, filename);
+            if (res?.error) console.error("Upload failed:", res.error);
+          } catch {}
+        }
+      })();
     } finally {
       setIsSaving(false);
     }
@@ -472,20 +494,13 @@ export default function Home() {
 
     setIsSharing(true);
     try {
-        const { blob } = await buildFramedPhoto(sourceImage, shouldMirrorResult || isManuallyFlipped, cropTransform, sourceBlob, isFromNativeCamera);
-
-        try {
-          await logEvent("share", { via: "native_share" });
-        } catch {}
-        void incrementCounter("share");
-
-        if (blob) {
-          const filename = `share-${Date.now()}-${Math.floor(Math.random() * 10000)}.png`;
-          try {
-            const res = await uploadFrame(blob, filename);
-            if (res?.error) console.error("Upload failed:", res.error);
-          } catch {}
-        }
+      const { blob } = await buildFramedPhoto(
+        sourceImage,
+        shouldMirrorResult || isManuallyFlipped,
+        cropTransform,
+        sourceBlob,
+        isFromNativeCamera,
+      );
 
       const sharePayload: ShareData = {
         title: "LinkUp Colombo Frame Demo",
@@ -501,7 +516,25 @@ export default function Home() {
         }
       }
 
+      // Call share() immediately after blob is ready — before any awaited
+      // async work — so iOS doesn't invalidate the user-gesture token.
       await navigator.share(sharePayload);
+
+      // Fire-and-forget log + upload after the share sheet is already open.
+      void (async () => {
+        try {
+          await logEvent("share", { via: "native_share" });
+        } catch {}
+        void incrementCounter("share");
+
+        if (blob) {
+          const filename = `share-${Date.now()}-${Math.floor(Math.random() * 10000)}.png`;
+          try {
+            const res = await uploadFrame(blob, filename);
+            if (res?.error) console.error("Upload failed:", res.error);
+          } catch {}
+        }
+      })();
     } catch {
       // Ignore if user dismisses native share sheet.
     } finally {
