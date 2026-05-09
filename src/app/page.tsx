@@ -499,11 +499,14 @@ export default function Home() {
                   />
 
                   <div className="preview-editor__overlay" />
-                  <p className="preview-editor__hint">Use two fingers to zoom. Swipe to reposition.</p>
                 </div>
               )}
 
               <img src="/frame.png" alt="LinkUp frame overlay" className="preview-frame" />
+
+              {mode === "result" && sourceImage && (
+                <p className="preview-editor__hint">Use two fingers to zoom. Swipe to reposition.</p>
+              )}
 
               {mode === "idle" && (
                 <div className="preview-empty">
