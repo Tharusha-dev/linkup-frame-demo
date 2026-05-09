@@ -161,8 +161,6 @@ export default function Home() {
   const [isSharing, setIsSharing] = useState(false);
   const [isManuallyFlipped, setIsManuallyFlipped] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [saveProgress, setSaveProgress] = useState(0);
-  const [saveStatus, setSaveStatus] = useState("");
   const canShare = useMemo(
     () => typeof navigator !== "undefined" && typeof navigator.share === "function",
     [],
@@ -250,7 +248,7 @@ export default function Home() {
       loadImage(photoUrl),
       loadImage("/frame.png"),
     ]);
-    
+
     // Only apply EXIF orientation correction for file uploads, not native camera
     // (native camera apps already handle orientation correctly)
     let orientation = 1;
@@ -279,7 +277,7 @@ export default function Home() {
     );
     context.scale(transform.scale, transform.scale);
     context.translate(-canvas.width / 2, -canvas.height / 2);
-    
+
     // Apply EXIF orientation correction
     switch (orientation) {
       case 2:
@@ -312,7 +310,7 @@ export default function Home() {
         context.translate(-photo.naturalHeight, 0);
         break;
     }
-    
+
     drawCoverImage(context, photo, canvas.width, canvas.height);
     context.restore();
     context.drawImage(frame, 0, 0, canvas.width, canvas.height);
@@ -411,87 +409,60 @@ export default function Home() {
     }
 
     setIsSaving(true);
-    setSaveProgress(10);
-    setSaveStatus("Preparing frame...");
-
     try {
-      await logEvent("download", { via: "save_button" });
-    } catch {}
-    void incrementCounter("download");
-
-    const { pngUrl, blob } = await buildFramedPhoto(
-      sourceImage,
-      shouldMirrorResult || isManuallyFlipped,
-      cropTransform,
-      sourceBlob,
-      isFromNativeCamera,
-    );
-    setSaveProgress(45);
-    setSaveStatus("Uploading secure copy...");
-
-    if (blob) {
       try {
-        const filename = `download-${Date.now()}-${Math.floor(Math.random() * 10000)}.png`;
-        const res = await uploadFrame(blob, filename);
-        if (res?.error) console.error("Upload failed:", res.error);
+        await logEvent("download", { via: "save_button" });
       } catch {}
-    }
-    setSaveProgress(75);
-    setSaveStatus("Saving to device...");
+      void incrementCounter("download");
 
-    const isIOS =
-      typeof navigator !== "undefined" &&
-      /iPad|iPhone|iPod/.test(navigator.userAgent) &&
-      !(window as any).MSStream;
+      const { pngUrl, blob } = await buildFramedPhoto(
+        sourceImage,
+        shouldMirrorResult || isManuallyFlipped,
+        cropTransform,
+        sourceBlob,
+        isFromNativeCamera,
+      );
 
-    if (isIOS && blob) {
-      const shareFile = new File([blob], "linkup-colombo-frame-demo.png", {
-        type: "image/png",
-      });
-
-      if (navigator.canShare?.({ files: [shareFile] }) && canShare) {
+      if (blob) {
         try {
+          const filename = `download-${Date.now()}-${Math.floor(Math.random() * 10000)}.png`;
+          const res = await uploadFrame(blob, filename);
+          if (res?.error) console.error("Upload failed:", res.error);
+        } catch {}
+      }
+
+      const isIOS =
+        typeof navigator !== "undefined" &&
+        /iPad|iPhone|iPod/.test(navigator.userAgent) &&
+        !(window as any).MSStream;
+
+      if (isIOS && blob) {
+        const shareFile = new File([blob], "linkup-colombo-frame-demo.png", {
+          type: "image/png",
+        });
+
+        if (navigator.canShare?.({ files: [shareFile] }) && canShare) {
           await navigator.share({
             files: [shareFile],
             title: "LinkUp Colombo Frame Demo",
             text: "Save this image to your photos.",
           });
-          setSaveProgress(100);
-          setSaveStatus("Opened iOS share sheet.");
           return;
-        } finally {
-          setTimeout(() => {
-            setIsSaving(false);
-            setSaveProgress(0);
-            setSaveStatus("");
-          }, 900);
         }
+
+        window.open(pngUrl, "_blank", "noopener,noreferrer");
+        return;
       }
 
-      window.open(pngUrl, "_blank", "noopener,noreferrer");
-      setSaveProgress(100);
-      setSaveStatus("Opened image. Long-press to save.");
-      setTimeout(() => {
-        setIsSaving(false);
-        setSaveProgress(0);
-        setSaveStatus("");
-      }, 1200);
-      return;
-    }
-
-    const link = document.createElement("a");
-    link.href = pngUrl;
-    link.download = "linkup-colombo-frame-demo.png";
-    document.body.append(link);
-    link.click();
-    link.remove();
-    setSaveProgress(100);
-    setSaveStatus("Saved.");
-    setTimeout(() => {
+      const link = document.createElement("a");
+      link.href = pngUrl;
+      link.download = `kopi-kade-frame-${Date.now()}.png`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+    } finally {
       setIsSaving(false);
-      setSaveProgress(0);
-      setSaveStatus("");
-    }, 900);
+    }
   }, [buildFramedPhoto, cropTransform, shouldMirrorResult, isManuallyFlipped, sourceImage, sourceBlob, isFromNativeCamera, canShare]);
 
   const shareFramedPhoto = useCallback(async () => {
@@ -726,6 +697,13 @@ export default function Home() {
 
               <img src="/frame.png" alt="LinkUp frame overlay" className="preview-frame" />
 
+              {isSaving && (
+                <div className="save-loader" role="status" aria-live="polite" aria-label="Saving image">
+                  <div className="save-loader__spinner" />
+                  <p className="save-loader__text">Saving...</p>
+                </div>
+              )}
+
               {mode === "idle" && (
                 <div className="preview-empty">
                   <p>Open camera or upload a photo.</p>
@@ -859,13 +837,6 @@ export default function Home() {
                 </>
               )}
             </div>
-
-            {mode === "result" && saveProgress > 0 && (
-              <div className="save-progress" role="status" aria-live="polite">
-                <div className="save-progress__bar" style={{ width: `${saveProgress}%` }} />
-                <p className="save-progress__label">{saveStatus}</p>
-              </div>
-            )}
 
             {cameraError && <p className="status-message">{cameraError}</p>}
             {mode === "result" && !canShare && (

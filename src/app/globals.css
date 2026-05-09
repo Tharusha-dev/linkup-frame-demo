@@ -310,27 +310,39 @@ body {
   line-height: 1.5;
 }
 
-.save-progress {
-  border: 2px solid #1f1a17;
-  background: #fff8df;
-  box-shadow: 0 2px 0 #1f1915;
-  overflow: hidden;
+.save-loader {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 0.55rem;
+  background: #1f1a1788;
 }
 
-.save-progress__bar {
-  height: 0.45rem;
-  background: linear-gradient(90deg, var(--linkup-orange), #f08b2f);
-  transition: width 220ms ease;
+.save-loader__spinner {
+  width: 3rem;
+  height: 3rem;
+  border: 0.3rem solid #ffefc3;
+  border-top-color: var(--linkup-orange);
+  border-radius: 999px;
+  animation: spin 0.85s linear infinite;
 }
 
-.save-progress__label {
+.save-loader__text {
   margin: 0;
-  padding: 0.45rem 0.6rem 0.55rem;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
+  color: #fff8e3;
+  font-family: var(--font-display), sans-serif;
   text-transform: uppercase;
-  color: #382613;
+  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .result-card {
