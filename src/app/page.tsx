@@ -153,6 +153,7 @@ export default function Home() {
   const [cameraError, setCameraError] = useState<string>("");
   const [sourceImage, setSourceImage] = useState<string>("");
   const [sourceBlob, setSourceBlob] = useState<Blob | null>(null);
+  const [isFromNativeCamera, setIsFromNativeCamera] = useState(false);
   const [shouldMirrorResult, setShouldMirrorResult] = useState(false);
   const [cropTransform, setCropTransform] = useState<CropTransform>(INITIAL_CROP_TRANSFORM);
   const isCompositing = false;
@@ -237,14 +238,17 @@ export default function Home() {
     mirrorPhoto = false,
     transform: CropTransform = INITIAL_CROP_TRANSFORM,
     photoBlob: Blob | null = null,
+    fromNativeCamera = false,
   ) => {
     const [photo, frame] = await Promise.all([
       loadImage(photoUrl),
       loadImage("/frame.png"),
     ]);
     
+    // Only apply EXIF orientation correction for file uploads, not native camera
+    // (native camera apps already handle orientation correctly)
     let orientation = 1;
-    if (photoBlob) {
+    if (photoBlob && !fromNativeCamera) {
       orientation = await getEXIFOrientation(photoBlob);
     }
 
@@ -346,7 +350,7 @@ export default function Home() {
   }, [cameraFacing, stopCamera]);
 
   const processSelectedFile = useCallback(
-    async (event: React.ChangeEvent<HTMLInputElement>, mirrorResult: boolean) => {
+    async (event: React.ChangeEvent<HTMLInputElement>, mirrorResult: boolean, fromNativeCamera = false) => {
       const file = event.target.files?.[0];
       if (!file) {
         return;
@@ -356,6 +360,7 @@ export default function Home() {
       stopCamera();
       setSourceImage(fileUrl);
       setSourceBlob(file);
+      setIsFromNativeCamera(fromNativeCamera);
       setShouldMirrorResult(mirrorResult);
       setCropTransform(INITIAL_CROP_TRANSFORM);
       setMode("result");
@@ -366,14 +371,14 @@ export default function Home() {
 
   const onUploadPhoto = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
-      void processSelectedFile(event, false);
+      void processSelectedFile(event, false, false);
     },
     [processSelectedFile],
   );
 
   const onNativeCapturePhoto = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
-      void processSelectedFile(event, cameraFacing === "user");
+      void processSelectedFile(event, cameraFacing === "user", true);
     },
     [cameraFacing, processSelectedFile],
   );
@@ -383,14 +388,14 @@ export default function Home() {
       return;
     }
 
-    const { pngUrl } = await buildFramedPhoto(sourceImage, shouldMirrorResult, cropTransform, sourceBlob);
+    const { pngUrl } = await buildFramedPhoto(sourceImage, shouldMirrorResult, cropTransform, sourceBlob, isFromNativeCamera);
     const link = document.createElement("a");
     link.href = pngUrl;
     link.download = "linkup-colombo-frame-demo.png";
     document.body.append(link);
     link.click();
     link.remove();
-  }, [buildFramedPhoto, cropTransform, shouldMirrorResult, sourceImage, sourceBlob]);
+  }, [buildFramedPhoto, cropTransform, shouldMirrorResult, sourceImage, sourceBlob, isFromNativeCamera]);
 
   const shareFramedPhoto = useCallback(async () => {
     if (!canShare || !sourceImage) {
@@ -399,7 +404,7 @@ export default function Home() {
 
     setIsSharing(true);
     try {
-      const { blob } = await buildFramedPhoto(sourceImage, shouldMirrorResult, cropTransform, sourceBlob);
+      const { blob } = await buildFramedPhoto(sourceImage, shouldMirrorResult, cropTransform, sourceBlob, isFromNativeCamera);
       const sharePayload: ShareData = {
         title: "LinkUp Colombo Frame Demo",
         text: "I captured this from the LinkUp Colombo frame demo!",
@@ -420,7 +425,7 @@ export default function Home() {
     } finally {
       setIsSharing(false);
     }
-  }, [buildFramedPhoto, canShare, cropTransform, shouldMirrorResult, sourceImage, sourceBlob]);
+  }, [buildFramedPhoto, canShare, cropTransform, shouldMirrorResult, sourceImage, sourceBlob, isFromNativeCamera]);
 
   const adjustZoom = useCallback((delta: number) => {
     setCropTransform((current) =>
@@ -536,6 +541,7 @@ export default function Home() {
     stopCamera();
     setSourceImage("");
     setSourceBlob(null);
+    setIsFromNativeCamera(false);
     setShouldMirrorResult(false);
     setCropTransform(INITIAL_CROP_TRANSFORM);
     gestureRef.current = null;
