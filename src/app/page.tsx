@@ -78,60 +78,6 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-function getEXIFOrientation(blob: Blob): Promise<number> {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const arr = new Uint8Array(e.target?.result as ArrayBuffer).subarray(0, 4);
-      if (arr[0] !== 0xff || arr[1] !== 0xd8 || arr[2] !== 0xff) {
-        resolve(1); // Not a JPEG, return default orientation
-        return;
-      }
-
-      const view = new DataView(e.target?.result as ArrayBuffer);
-      let offset = 2;
-      while (offset + 4 < view.byteLength) {
-        const marker = view.getUint16(offset);
-        // Segment length field is 2 bytes starting at offset+2 (excludes the
-        // 2-byte marker but includes itself, so total segment = 2 + length).
-        const segmentLength = view.getUint16(offset + 2);
-
-        if (marker === 0xffe1) {
-          // APP1 – check for "Exif\0\0" header (0x45786966 = "Exif")
-          if (
-            offset + 10 < view.byteLength &&
-            view.getUint32(offset + 4) === 0x45786966
-          ) {
-            // TIFF header starts 8 bytes after the segment start (after marker,
-            // length, "Exif", null-null padding).
-            const tiffOffset = offset + 10;
-            if (tiffOffset + 8 >= view.byteLength) break;
-
-            const littleEndian = view.getUint16(tiffOffset) === 0x4949;
-            const tags = view.getUint16(tiffOffset + 8, littleEndian);
-
-            for (let i = 0; i < tags; i++) {
-              const tagOffset = tiffOffset + 10 + i * 12;
-              if (tagOffset + 10 > view.byteLength) break;
-              if (view.getUint16(tagOffset, littleEndian) === 0x0112) {
-                resolve(view.getUint16(tagOffset + 8, littleEndian));
-                return;
-              }
-            }
-          }
-          // APP1 without Exif or no orientation tag found – default.
-          resolve(1);
-          return;
-        }
-
-        // Advance past this segment: 2-byte marker + segmentLength bytes.
-        offset += 2 + segmentLength;
-      }
-      resolve(1);
-    };
-    reader.readAsArrayBuffer(blob);
-  });
-}
 
 function drawCoverImage(
   context: CanvasRenderingContext2D,
@@ -162,7 +108,6 @@ export default function Home() {
   const [cameraError, setCameraError] = useState<string>("");
   const [sourceImage, setSourceImage] = useState<string>("");
   const [sourceBlob, setSourceBlob] = useState<Blob | null>(null);
-  const [isFromNativeCamera, setIsFromNativeCamera] = useState(false);
   const [shouldMirrorResult, setShouldMirrorResult] = useState(false);
   const [cropTransform, setCropTransform] = useState<CropTransform>(INITIAL_CROP_TRANSFORM);
   const isCompositing = false;
@@ -250,37 +195,69 @@ export default function Home() {
     mirrorPhoto = false,
     transform: CropTransform = INITIAL_CROP_TRANSFORM,
     photoBlob: Blob | null = null,
-    fromNativeCamera = false,
   ) => {
-    const [photo, frame] = await Promise.all([
-      loadImage(photoUrl),
-      loadImage("/frame.png"),
-    ]);
+    const frameImg = await loadImage("/frame.png");
 
-    // Always apply EXIF orientation correction when a blob is available.
-    // iOS native camera photos embed EXIF orientation data that browsers do NOT
-    // auto-apply when drawing to a canvas (only <img> tags honour it), so we
-    // must read and apply it ourselves regardless of the capture path.
-    let orientation = 1;
-    if (photoBlob) {
-      orientation = await getEXIFOrientation(photoBlob);
+    // Resolve the photo source as an ImageBitmap when possible.
+    // createImageBitmap with imageOrientation:'from-image' instructs the
+    // browser to bake EXIF rotation into the bitmap pixels, so the bitmap's
+    // .width/.height already reflect the display-correct dimensions and
+    // drawImage() draws the correctly-oriented image — no manual EXIF
+    // transforms needed.  Falls back to a plain <img> (which modern Safari
+    // also auto-corrects in drawImage) when the API is unavailable.
+    let photoSource: HTMLImageElement | ImageBitmap;
+    let photoWidth: number;
+    let photoHeight: number;
+
+    if (photoBlob && typeof createImageBitmap === "function") {
+      try {
+        const bitmap = await createImageBitmap(photoBlob, {
+          imageOrientation: "from-image" as ImageOrientation,
+        });
+        photoSource = bitmap;
+        photoWidth = bitmap.width;
+        photoHeight = bitmap.height;
+      } catch {
+        // createImageBitmap failed — fall back to the <img> path.
+        const img = await loadImage(photoUrl);
+        photoSource = img;
+        photoWidth = img.naturalWidth;
+        photoHeight = img.naturalHeight;
+      }
+    } else {
+      const img = await loadImage(photoUrl);
+      photoSource = img;
+      photoWidth = img.naturalWidth;
+      photoHeight = img.naturalHeight;
     }
 
     const canvas = document.createElement("canvas");
-    canvas.width = frame.naturalWidth;
-    canvas.height = frame.naturalHeight;
+    canvas.width = frameImg.naturalWidth;
+    canvas.height = frameImg.naturalHeight;
     const context = canvas.getContext("2d");
 
     if (!context) {
       throw new Error("Canvas not supported");
     }
 
+    // Compute cover-fit scale/offset for the photo inside the canvas.
+    const coverScale = Math.max(
+      canvas.width / photoWidth,
+      canvas.height / photoHeight,
+    );
+    const drawW = photoWidth * coverScale;
+    const drawH = photoHeight * coverScale;
+    const baseOffsetX = (canvas.width - drawW) / 2;
+    const baseOffsetY = (canvas.height - drawH) / 2;
+
     context.save();
+
     if (mirrorPhoto) {
       context.translate(canvas.width, 0);
       context.scale(-1, 1);
     }
 
+    // Apply user crop transform (pan + zoom) around the canvas centre.
     context.translate(
       canvas.width / 2 + transform.offsetX * canvas.width,
       canvas.height / 2 + transform.offsetY * canvas.height,
@@ -288,47 +265,28 @@ export default function Home() {
     context.scale(transform.scale, transform.scale);
     context.translate(-canvas.width / 2, -canvas.height / 2);
 
-    // Apply EXIF orientation correction
-    switch (orientation) {
-      case 2:
-        context.translate(photo.naturalWidth, 0);
-        context.scale(-1, 1);
-        break;
-      case 3:
-        context.translate(photo.naturalWidth, photo.naturalHeight);
-        context.rotate(Math.PI);
-        break;
-      case 4:
-        context.translate(0, photo.naturalHeight);
-        context.scale(1, -1);
-        break;
-      case 5:
-        context.rotate(Math.PI / 2);
-        context.scale(1, -1);
-        break;
-      case 6:
-        context.rotate(Math.PI / 2);
-        context.translate(0, -photo.naturalWidth);
-        break;
-      case 7:
-        context.rotate(-Math.PI / 2);
-        context.translate(-photo.naturalHeight, 0);
-        context.scale(1, -1);
-        break;
-      case 8:
-        context.rotate(-Math.PI / 2);
-        context.translate(-photo.naturalHeight, 0);
-        break;
-    }
+    context.drawImage(
+      photoSource as CanvasImageSource,
+      baseOffsetX,
+      baseOffsetY,
+      drawW,
+      drawH,
+    );
 
-    drawCoverImage(context, photo, canvas.width, canvas.height);
     context.restore();
-    context.drawImage(frame, 0, 0, canvas.width, canvas.height);
+
+    // Draw the frame overlay on top.
+    context.drawImage(frameImg, 0, 0, canvas.width, canvas.height);
 
     const pngUrl = canvas.toDataURL("image/png");
     const blob = await new Promise<Blob | null>((resolve) => {
       canvas.toBlob((generatedBlob) => resolve(generatedBlob), "image/png", 1);
     });
+
+    // Clean up the bitmap if we created one.
+    if (photoSource && "close" in photoSource) {
+      (photoSource as ImageBitmap).close();
+    }
 
     return { pngUrl, blob };
   }, []);
@@ -382,7 +340,6 @@ export default function Home() {
       stopCamera();
       setSourceImage(fileUrl);
       setSourceBlob(file);
-      setIsFromNativeCamera(fromNativeCamera);
       setShouldMirrorResult(mirrorResult);
       setCropTransform(INITIAL_CROP_TRANSFORM);
       setMode("result");
@@ -425,7 +382,6 @@ export default function Home() {
         shouldMirrorResult || isManuallyFlipped,
         cropTransform,
         sourceBlob,
-        isFromNativeCamera,
       );
 
       const isIOS =
@@ -495,7 +451,7 @@ export default function Home() {
     } finally {
       setIsSaving(false);
     }
-  }, [buildFramedPhoto, cropTransform, shouldMirrorResult, isManuallyFlipped, sourceImage, sourceBlob, isFromNativeCamera, canShare]);
+  }, [buildFramedPhoto, cropTransform, shouldMirrorResult, isManuallyFlipped, sourceImage, sourceBlob, canShare]);
 
   const shareFramedPhoto = useCallback(async () => {
     if (!canShare || !sourceImage) {
@@ -509,7 +465,6 @@ export default function Home() {
         shouldMirrorResult || isManuallyFlipped,
         cropTransform,
         sourceBlob,
-        isFromNativeCamera,
       );
 
       const sharePayload: ShareData = {
@@ -550,7 +505,7 @@ export default function Home() {
     } finally {
       setIsSharing(false);
     }
-  }, [buildFramedPhoto, canShare, cropTransform, shouldMirrorResult, isManuallyFlipped, sourceImage, sourceBlob, isFromNativeCamera]);
+  }, [buildFramedPhoto, canShare, cropTransform, shouldMirrorResult, isManuallyFlipped, sourceImage, sourceBlob]);
 
   const adjustZoom = useCallback((delta: number) => {
     setCropTransform((current) =>
@@ -670,7 +625,6 @@ export default function Home() {
     stopCamera();
     setSourceImage("");
     setSourceBlob(null);
-    setIsFromNativeCamera(false);
     setShouldMirrorResult(false);
       setIsManuallyFlipped(false);
     setCropTransform(INITIAL_CROP_TRANSFORM);
