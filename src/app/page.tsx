@@ -382,6 +382,8 @@ export default function Home() {
       return;
     }
 
+    const horizontalDirection = shouldMirrorResult ? -1 : 1;
+
     if (points.length >= 2 && gesture.startCenter && gesture.startDistance > 0) {
       const currentCenter = getCenter(points[0], points[1]);
       const currentDistance = getDistance(points[0], points[1]);
@@ -393,7 +395,7 @@ export default function Home() {
 
       setCropTransform(clampCropTransform({
         scale: nextScale,
-        offsetX: gesture.startTransform.offsetX + (currentCenter.x - gesture.startCenter.x) / rect.width,
+        offsetX: gesture.startTransform.offsetX + ((currentCenter.x - gesture.startCenter.x) / rect.width) * horizontalDirection,
         offsetY: gesture.startTransform.offsetY + (currentCenter.y - gesture.startCenter.y) / rect.height,
       }));
       return;
@@ -402,11 +404,11 @@ export default function Home() {
     if (gesture.startPointer) {
       setCropTransform(clampCropTransform({
         scale: gesture.startTransform.scale,
-        offsetX: gesture.startTransform.offsetX + (event.clientX - gesture.startPointer.x) / rect.width,
+        offsetX: gesture.startTransform.offsetX + ((event.clientX - gesture.startPointer.x) / rect.width) * horizontalDirection,
         offsetY: gesture.startTransform.offsetY + (event.clientY - gesture.startPointer.y) / rect.height,
       }));
     }
-  }, [mode, sourceImage]);
+  }, [mode, shouldMirrorResult, sourceImage]);
 
   const handleCropPointerEnd = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     const editor = cropEditorRef.current;
