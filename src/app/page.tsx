@@ -497,7 +497,7 @@ export default function Home() {
                   />
 
                   <div className="preview-editor__overlay" />
-                  <p className="preview-editor__hint">Drag to reframe. Pinch or scroll to zoom.</p>
+                  <p className="preview-editor__hint">Use two fingers to zoom. Swipe to reposition.</p>
                 </div>
               )}
 
@@ -515,42 +515,19 @@ export default function Home() {
                 <>
                   <button
                     type="button"
-                    onClick={() => adjustZoom(-CROP_ZOOM_STEP)}
-                    className="btn btn--subtle"
-                    aria-label="Zoom out"
-                    title="Zoom out"
-                    disabled={isCompositing}
-                  >
-                    Zoom Out
-                  </button>
-
-                  <button
-                    type="button"
                     onClick={resetCrop}
                     className="btn btn--ghost"
                     aria-label="Reset crop"
                     title="Reset crop"
-                    disabled={isCompositing}
                   >
                     Reset Crop
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => adjustZoom(CROP_ZOOM_STEP)}
-                    className="btn btn--subtle"
-                    aria-label="Zoom in"
-                    title="Zoom in"
-                    disabled={isCompositing}
-                  >
-                    Zoom In
-                  </button>
-
-                  <button
-                    type="button"
                     onClick={downloadFramedPhoto}
                     className="btn btn--primary"
-                    disabled={!sourceImage || isCompositing}
+                    disabled={!sourceImage}
                     aria-label="Save to device"
                     title="Save to device"
                   >
@@ -561,7 +538,7 @@ export default function Home() {
                     type="button"
                     onClick={shareFramedPhoto}
                     className="btn btn--accent"
-                    disabled={!sourceImage || isCompositing || !canShare || isSharing}
+                    disabled={!sourceImage || !canShare || isSharing}
                     aria-label="Share to social"
                     title="Share to social"
                   >
