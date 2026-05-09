@@ -34,6 +34,7 @@ function drawCoverImage(
 
 export default function Home() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const nativeCaptureInputRef = useRef<HTMLInputElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [mode, setMode] = useState<CaptureMode>("idle");
   const [cameraFacing, setCameraFacing] = useState<"environment" | "user">("user");
@@ -50,6 +51,17 @@ export default function Home() {
     [],
   );
 
+  const prefersNativeCameraCapture = useMemo(() => {
+    if (typeof navigator === "undefined") {
+      return false;
+    }
+
+    const mobileUserAgent = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const isIPadLikeDesktop = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+
+    return mobileUserAgent || isIPadLikeDesktop;
+  }, []);
+
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
       for (const track of streamRef.current.getTracks()) {
@@ -65,6 +77,13 @@ export default function Home() {
 
   const openCamera = useCallback(async (facingMode: "environment" | "user") => {
     setCameraError("");
+
+    if (prefersNativeCameraCapture) {
+      setCameraFacing(facingMode);
+      nativeCaptureInputRef.current?.click();
+      return;
+    }
+
     try {
       stopCamera();
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -89,7 +108,7 @@ export default function Home() {
         "Camera access is blocked on this device. You can still upload a photo from your gallery.",
       );
     }
-  }, [stopCamera]);
+  }, [prefersNativeCameraCapture, stopCamera]);
 
   const switchCamera = useCallback(async () => {
     const nextFacing = cameraFacing === "environment" ? "user" : "environment";
@@ -170,7 +189,7 @@ export default function Home() {
     await composeFramedPhoto(image, mirrorCapture);
   }, [cameraFacing, composeFramedPhoto, stopCamera]);
 
-  const onUploadPhoto = useCallback(
+  const processSelectedFile = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
       if (!file) {
@@ -187,6 +206,9 @@ export default function Home() {
     },
     [composeFramedPhoto, stopCamera],
   );
+
+  const onUploadPhoto = processSelectedFile;
+  const onNativeCapturePhoto = processSelectedFile;
 
   const downloadFramedPhoto = useCallback(() => {
     if (!framedImage) {
@@ -368,6 +390,17 @@ export default function Home() {
                     accept="image/*"
                     onChange={onUploadPhoto}
                     className="visually-hidden"
+                  />
+
+                  <input
+                    ref={nativeCaptureInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture={cameraFacing}
+                    onChange={onNativeCapturePhoto}
+                    className="visually-hidden"
+                    tabIndex={-1}
+                    aria-hidden="true"
                   />
 
                   <button
