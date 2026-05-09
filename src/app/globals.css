@@ -310,6 +310,29 @@ body {
   line-height: 1.5;
 }
 
+.save-progress {
+  border: 2px solid #1f1a17;
+  background: #fff8df;
+  box-shadow: 0 2px 0 #1f1915;
+  overflow: hidden;
+}
+
+.save-progress__bar {
+  height: 0.45rem;
+  background: linear-gradient(90deg, var(--linkup-orange), #f08b2f);
+  transition: width 220ms ease;
+}
+
+.save-progress__label {
+  margin: 0;
+  padding: 0.45rem 0.6rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #382613;
+}
+
 .result-card {
   margin-top: 1rem;
   display: grid;

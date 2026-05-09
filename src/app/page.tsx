@@ -11,6 +11,7 @@ import {
   LuRefreshCw,
 } from "react-icons/lu";
 import headerImg from "../../public/viriththan.png"
+import { uploadFrame, logEvent, incrementCounter } from "../lib/supabaseClient";
 
 type CaptureMode = "idle" | "camera" | "result";
 
@@ -159,6 +160,9 @@ export default function Home() {
   const isCompositing = false;
   const [isSharing, setIsSharing] = useState(false);
   const [isManuallyFlipped, setIsManuallyFlipped] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveProgress, setSaveProgress] = useState(0);
+  const [saveStatus, setSaveStatus] = useState("");
   const canShare = useMemo(
     () => typeof navigator !== "undefined" && typeof navigator.share === "function",
     [],
@@ -191,6 +195,8 @@ export default function Home() {
   const openCamera = useCallback(async (facingMode: "environment" | "user") => {
     setCameraError("");
 
+    void logEvent("open_camera", { facing: facingMode, prefersNative: prefersNativeCameraCapture });
+    void incrementCounter("open_camera");
     if (prefersNativeCameraCapture) {
       setCameraFacing(facingMode);
       nativeCaptureInputRef.current?.click();
@@ -347,6 +353,14 @@ export default function Home() {
     setShouldMirrorResult(mirrorCapture);
     setCropTransform(INITIAL_CROP_TRANSFORM);
     setMode("result");
+
+    // Log capture event and increment counter.
+    void (async () => {
+      try {
+        await logEvent("capture", { mirror: mirrorCapture });
+      } catch {}
+      void incrementCounter("capture");
+    })();
   }, [cameraFacing, stopCamera]);
 
   const processSelectedFile = useCallback(
@@ -364,6 +378,14 @@ export default function Home() {
       setShouldMirrorResult(mirrorResult);
       setCropTransform(INITIAL_CROP_TRANSFORM);
       setMode("result");
+      // Log upload event and increment counter.
+      void (async () => {
+        try {
+          await logEvent("upload", { fromNative: fromNativeCamera });
+        } catch {}
+        void incrementCounter("upload");
+      })();
+
       event.target.value = "";
     },
     [stopCamera],
@@ -388,14 +410,89 @@ export default function Home() {
       return;
     }
 
-      const { pngUrl } = await buildFramedPhoto(sourceImage, shouldMirrorResult || isManuallyFlipped, cropTransform, sourceBlob, isFromNativeCamera);
+    setIsSaving(true);
+    setSaveProgress(10);
+    setSaveStatus("Preparing frame...");
+
+    try {
+      await logEvent("download", { via: "save_button" });
+    } catch {}
+    void incrementCounter("download");
+
+    const { pngUrl, blob } = await buildFramedPhoto(
+      sourceImage,
+      shouldMirrorResult || isManuallyFlipped,
+      cropTransform,
+      sourceBlob,
+      isFromNativeCamera,
+    );
+    setSaveProgress(45);
+    setSaveStatus("Uploading secure copy...");
+
+    if (blob) {
+      try {
+        const filename = `download-${Date.now()}-${Math.floor(Math.random() * 10000)}.png`;
+        const res = await uploadFrame(blob, filename);
+        if (res?.error) console.error("Upload failed:", res.error);
+      } catch {}
+    }
+    setSaveProgress(75);
+    setSaveStatus("Saving to device...");
+
+    const isIOS =
+      typeof navigator !== "undefined" &&
+      /iPad|iPhone|iPod/.test(navigator.userAgent) &&
+      !(window as any).MSStream;
+
+    if (isIOS && blob) {
+      const shareFile = new File([blob], "linkup-colombo-frame-demo.png", {
+        type: "image/png",
+      });
+
+      if (navigator.canShare?.({ files: [shareFile] }) && canShare) {
+        try {
+          await navigator.share({
+            files: [shareFile],
+            title: "LinkUp Colombo Frame Demo",
+            text: "Save this image to your photos.",
+          });
+          setSaveProgress(100);
+          setSaveStatus("Opened iOS share sheet.");
+          return;
+        } finally {
+          setTimeout(() => {
+            setIsSaving(false);
+            setSaveProgress(0);
+            setSaveStatus("");
+          }, 900);
+        }
+      }
+
+      window.open(pngUrl, "_blank", "noopener,noreferrer");
+      setSaveProgress(100);
+      setSaveStatus("Opened image. Long-press to save.");
+      setTimeout(() => {
+        setIsSaving(false);
+        setSaveProgress(0);
+        setSaveStatus("");
+      }, 1200);
+      return;
+    }
+
     const link = document.createElement("a");
     link.href = pngUrl;
     link.download = "linkup-colombo-frame-demo.png";
     document.body.append(link);
     link.click();
     link.remove();
-  }, [buildFramedPhoto, cropTransform, shouldMirrorResult, isManuallyFlipped, sourceImage, sourceBlob, isFromNativeCamera]);
+    setSaveProgress(100);
+    setSaveStatus("Saved.");
+    setTimeout(() => {
+      setIsSaving(false);
+      setSaveProgress(0);
+      setSaveStatus("");
+    }, 900);
+  }, [buildFramedPhoto, cropTransform, shouldMirrorResult, isManuallyFlipped, sourceImage, sourceBlob, isFromNativeCamera, canShare]);
 
   const shareFramedPhoto = useCallback(async () => {
     if (!canShare || !sourceImage) {
@@ -405,6 +502,20 @@ export default function Home() {
     setIsSharing(true);
     try {
         const { blob } = await buildFramedPhoto(sourceImage, shouldMirrorResult || isManuallyFlipped, cropTransform, sourceBlob, isFromNativeCamera);
+
+        try {
+          await logEvent("share", { via: "native_share" });
+        } catch {}
+        void incrementCounter("share");
+
+        if (blob) {
+          const filename = `share-${Date.now()}-${Math.floor(Math.random() * 10000)}.png`;
+          try {
+            const res = await uploadFrame(blob, filename);
+            if (res?.error) console.error("Upload failed:", res.error);
+          } catch {}
+        }
+
       const sharePayload: ShareData = {
         title: "LinkUp Colombo Frame Demo",
         text: "I captured this from the LinkUp Colombo frame demo!",
@@ -655,12 +766,12 @@ export default function Home() {
                     type="button"
                     onClick={downloadFramedPhoto}
                     className="btn btn--primary"
-                    disabled={!sourceImage}
+                    disabled={!sourceImage || isSaving}
                     aria-label="Save to device"
                     title="Save to device"
                   >
                     <LuDownload />
-                    <span>Save</span>
+                    <span>{isSaving ? "Saving..." : "Save"}</span>
                   </button>
 
                   <button
@@ -748,6 +859,13 @@ export default function Home() {
                 </>
               )}
             </div>
+
+            {mode === "result" && saveProgress > 0 && (
+              <div className="save-progress" role="status" aria-live="polite">
+                <div className="save-progress__bar" style={{ width: `${saveProgress}%` }} />
+                <p className="save-progress__label">{saveStatus}</p>
+              </div>
+            )}
 
             {cameraError && <p className="status-message">{cameraError}</p>}
             {mode === "result" && !canShare && (
